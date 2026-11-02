@@ -77,7 +77,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
         </button>
         {modelValue && (
           <>
-            <button
+            <button aria-label="Copy"
               onClick={() => handleCopy(modelValue, "model")}
               className="shrink-0 px-3 py-2 bg-bg-secondary hover:bg-bg-tertiary rounded-lg border border-border transition-colors"
             >

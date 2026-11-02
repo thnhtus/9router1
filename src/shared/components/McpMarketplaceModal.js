@@ -162,9 +162,9 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-medium text-xs">{s.title}</span>
                         {s.oauth ? (
-                          <span className="px-1 py-0.5 text-[9px] rounded bg-amber-500/10 text-amber-600">OAuth</span>
+                          <span className="px-1 py-0.5 text-[10px] rounded bg-amber-500/10 text-amber-600">OAuth</span>
                         ) : (
-                          <span className="px-1 py-0.5 text-[9px] rounded bg-green-500/10 text-green-600">Authless</span>
+                          <span className="px-1 py-0.5 text-[10px] rounded bg-green-500/10 text-green-600">Authless</span>
                         )}
                         {s.toolCount > 0 && (
                           <span className="text-[10px] text-text-muted">{s.toolCount} tools</span>

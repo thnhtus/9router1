@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CardSkeleton } from "@/shared/components";
+import { CardSkeleton, ErrorState } from "@/shared/components";
 import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
 import { MitmLinkCard } from "./components";
 import ToolSummaryCard from "./components/ToolSummaryCard";
@@ -11,6 +11,8 @@ const ALL_STATUSES_URL = "/api/cli-tools/all-statuses";
 export default function CLIToolsPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [toolStatuses, setToolStatuses] = useState({});
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -18,14 +20,16 @@ export default function CLIToolsPageClient({ machineId }) {
       try {
         const res = await fetch(ALL_STATUSES_URL);
         if (res.ok && mounted) setToolStatuses(await res.json());
+        if (mounted) setLoadError(!res.ok);
       } catch (error) {
         console.log("Error fetching tool statuses:", error);
+        if (mounted) setLoadError(true);
       } finally {
         if (mounted) setLoading(false);
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [reloadKey]);
 
   if (loading) {
     return (
@@ -45,6 +49,7 @@ export default function CLIToolsPageClient({ machineId }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-1 sm:px-0">
+      {loadError && <ErrorState message="Couldn't load CLI tool status. Retry, or check that the 9Router server is running." onRetry={() => setReloadKey((k) => k + 1)} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {regularTools.map(([toolId, tool]) => (
           <ToolSummaryCard key={toolId} toolId={toolId} tool={tool} status={toolStatuses[toolId]} />

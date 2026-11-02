@@ -44,7 +44,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
           </div>
           {onTest && (
             <div className="relative group/btn">
-              <button
+              <button aria-label="Test model"
                 onClick={onTest}
                 disabled={isTesting}
                 className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"

@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { cn } from "@/shared/utils/cn";
 
 export default function Select({
@@ -14,18 +15,25 @@ export default function Select({
   required = false,
   className,
   selectClassName,
+  id,
   ...props
 }) {
+  const autoId = useId();
+  const inputId = id || autoId;
+  const msgId = `${inputId}-msg`;
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
-        <label className="text-sm font-medium text-text-main">
+        <label htmlFor={inputId} className="text-sm font-medium text-text-main">
           {label}
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
       )}
       <div className="relative">
         <select
+          id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error || hint ? msgId : undefined}
           value={value}
           onChange={onChange}
           disabled={disabled}
@@ -54,13 +62,13 @@ export default function Select({
         </div>
       </div>
       {error && (
-        <p className="text-xs text-red-500 flex items-center gap-1">
+        <p id={msgId} role="alert" className="text-xs text-red-500 flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">error</span>
           {error}
         </p>
       )}
       {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
+        <p id={msgId} className="text-xs text-text-muted">{hint}</p>
       )}
     </div>
   );

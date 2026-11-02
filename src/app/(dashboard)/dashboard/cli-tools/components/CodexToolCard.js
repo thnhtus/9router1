@@ -586,8 +586,9 @@ default_subagent_model = "${effectiveSubagentModel}"
 
                             <button
                               onClick={() => handleDeleteProfile(p.name)}
+                              aria-label="Delete model"
                               disabled={deletingProfile === p.name}
-                              className="p-1 text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                              className="p-1 text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity rounded"
                               title="Delete model"
                             >
                               <span className="material-symbols-outlined text-[15px]">close</span>

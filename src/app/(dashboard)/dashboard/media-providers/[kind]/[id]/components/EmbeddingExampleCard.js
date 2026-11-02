@@ -175,7 +175,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
               className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
             />
             {input && (
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setInput("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"

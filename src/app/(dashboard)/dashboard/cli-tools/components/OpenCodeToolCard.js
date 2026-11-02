@@ -364,7 +364,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                           >
                             {model === activeModel && <span className="material-symbols-outlined text-[10px]">star</span>}
                             {model}
-                            <button
+                            <button aria-label="Close"
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {

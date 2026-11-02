@@ -47,10 +47,26 @@ export function Skeleton({ className, ...props }) {
   );
 }
 
+// Load failure with retry. Shown instead of a silently empty page.
+export function ErrorState({ message = "Couldn't load this page.", onRetry, className }) {
+  return (
+    <div role="alert" className={cn("flex flex-wrap items-center gap-3 rounded-[14px] border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm", className)}>
+      <span className="material-symbols-outlined text-[20px] text-red-500" aria-hidden="true">error</span>
+      <p className="min-w-0 flex-1 text-text-main">{message}</p>
+      {onRetry && (
+        <button type="button" onClick={onRetry} className="inline-flex h-7 items-center gap-1.5 rounded-[8px] border border-border px-3 text-xs font-semibold text-text-main hover:bg-surface-2">
+          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">refresh</span>
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Card skeleton
 export function CardSkeleton() {
   return (
-    <div className="p-6 rounded-[14px] border border-border-subtle bg-surface shadow-[var(--shadow-soft)]">
+    <div role="status" aria-label="Loading" className="p-6 rounded-[14px] border border-border-subtle bg-surface shadow-[var(--shadow-soft)]">
       <div className="flex items-center justify-between mb-4">
         <Skeleton className="h-4 w-24" />
         <Skeleton className="size-10 rounded-[10px]" />

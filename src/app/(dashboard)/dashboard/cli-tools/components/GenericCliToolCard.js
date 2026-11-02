@@ -559,7 +559,7 @@ export default function GenericCliToolCard({
                                     <option key={n} value={n}>{formatTokens(n)} out</option>
                                   ))}
                                 </select>
-                                <button
+                                <button aria-label="Close"
                                   type="button"
                                   onClick={() => handleRemoveModel(modelId)}
                                   className="text-text-muted hover:text-red-500 rounded p-0.5"

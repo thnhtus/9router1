@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, ErrorState, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -22,6 +22,7 @@ import KeyAccessControls from "./components/KeyAccessControls";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
@@ -250,7 +251,7 @@ export default function APIPageClient({ machineId }) {
     try {
       const fetchKeys = async () => {
         const res = await fetch("/api/keys");
-        if (!res.ok) return [];
+        if (!res.ok) throw new Error(`GET /api/keys ${res.status}`);
         const data = await res.json();
         return data.keys || [];
       };
@@ -268,8 +269,10 @@ export default function APIPageClient({ machineId }) {
         } catch { /* fall through to empty render */ }
       }
       setKeys(existing);
+      setLoadError(false);
     } catch (error) {
       console.log("Error fetching data:", error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -730,6 +733,7 @@ export default function APIPageClient({ machineId }) {
 
   return (
     <div className="flex flex-col gap-8">
+      {loadError && <ErrorState message="Couldn't load your API keys. Check that the 9Router server is running, then retry." onRetry={fetchData} />}
       {/* Endpoint Card */}
       <Card>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -755,7 +759,7 @@ export default function APIPageClient({ machineId }) {
             {tunnelEnabled && !tunnelLoading && tunnelReachable ? (
               <>
                 <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
-                <button
+                <button aria-label="Copy"
                   onClick={() => copy(`${tunnelPublicUrl || tunnelUrl}/v1`, "tunnel_url")}
                   className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
@@ -803,7 +807,7 @@ export default function APIPageClient({ machineId }) {
                   <span className="material-symbols-outlined text-sm">error</span>
                   {tunnelStatus.message}
                 </div>
-                <Button size="sm" icon="cloud_upload" onClick={() => setShowEnableTunnelModal(true)}>Enable</Button>
+                <Button size="sm" variant="outline" icon="cloud_upload" onClick={() => setShowEnableTunnelModal(true)}>Enable</Button>
               </>
             ) : tunnelChecking ? (
               <>
@@ -822,6 +826,7 @@ export default function APIPageClient({ machineId }) {
             ) : (
               <Button
                 size="sm"
+                variant="outline"
                 icon="cloud_upload"
                 onClick={() => {
                   if (isLoginUnsafe) {
@@ -847,7 +852,7 @@ export default function APIPageClient({ machineId }) {
             {tsEnabled && !tsLoading && tsReachable ? (
               <>
                 <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
-                <button
+                <button aria-label="Copy"
                   onClick={() => copy(`${tsUrl}/v1`, "ts_url")}
                   className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
                 >
@@ -904,11 +909,12 @@ export default function APIPageClient({ machineId }) {
                   <span className="material-symbols-outlined text-sm">error</span>
                   {tsStatus.message}
                 </div>
-                <Button size="sm" icon="vpn_lock" onClick={handleOpenTsModal}>Enable</Button>
+                <Button size="sm" variant="outline" icon="vpn_lock" onClick={handleOpenTsModal}>Enable</Button>
               </>
             ) : (
               <Button
                 size="sm"
+                variant="outline"
                 icon="vpn_lock"
                 onClick={() => {
                   if (isLoginUnsafe) {
@@ -917,7 +923,6 @@ export default function APIPageClient({ machineId }) {
                   }
                   handleOpenTsModal();
                 }}
-                className="bg-linear-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white!"
               >
                 Enable
               </Button>
@@ -965,6 +970,7 @@ export default function APIPageClient({ machineId }) {
           <div className="mt-4 pt-4 border-t border-border flex items-center gap-3">
             <Toggle
               checked={tunnelDashboardAccess}
+              aria-label="Allow dashboard access via tunnel"
               onChange={() => handleTunnelDashboardAccess(!tunnelDashboardAccess)}
             />
             <div className="flex items-center gap-1.5">
@@ -996,6 +1002,7 @@ export default function APIPageClient({ machineId }) {
           </div>
           <Toggle
             checked={requireApiKey}
+            aria-label="Require API key"
             onChange={() => handleRequireApiKey(!requireApiKey)}
           />
         </div>
@@ -1033,6 +1040,7 @@ export default function APIPageClient({ machineId }) {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => toggleKeyVisibility(key.id)}
+                        aria-label={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
                         title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                       >
@@ -1040,7 +1048,7 @@ export default function APIPageClient({ machineId }) {
                           {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
                         </span>
                       </button>
-                      <button
+                      <button aria-label="Copy"
                         onClick={() => copy(key.key, key.id)}
                         className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
                       >
@@ -1073,6 +1081,7 @@ export default function APIPageClient({ machineId }) {
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
+                    aria-label={`Enable key ${key.name}`}
                     onChange={(checked) => {
                       if (key.isActive && !checked) {
                         setConfirmState({
@@ -1089,9 +1098,9 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
-                  <button
+                  <button aria-label="Delete"
                     onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-all"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>

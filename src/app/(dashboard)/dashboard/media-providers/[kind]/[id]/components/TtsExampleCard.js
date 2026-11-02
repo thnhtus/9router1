@@ -455,10 +455,10 @@ export function TtsExampleCard({ providerId }) {
                     {v.language ? ` · ${v.language}` : ""}
                     {v.gender ? ` · ${v.gender[0].toUpperCase()}` : ""}
                     {v.free_users_allowed === true && (
-                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-semibold rounded bg-green-500/15 text-green-600 border border-green-500/20">Free</span>
+                      <span className="ml-1.5 px-1 py-0.5 text-[10px] font-semibold rounded bg-green-500/15 text-green-600 border border-green-500/20">Free</span>
                     )}
                     {v.free_users_allowed === false && (
-                      <span className="ml-1.5 px-1 py-0.5 text-[9px] font-semibold rounded bg-amber-500/15 text-amber-600 border border-amber-500/20">Paid</span>
+                      <span className="ml-1.5 px-1 py-0.5 text-[10px] font-semibold rounded bg-amber-500/15 text-amber-600 border border-amber-500/20">Paid</span>
                     )}
                   </button>
                 ))}
@@ -481,7 +481,7 @@ export function TtsExampleCard({ providerId }) {
                     className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
                   />
                   {voiceId && (
-                    <button
+                    <button aria-label="Close"
                       type="button"
                       onClick={() => { setVoiceId(""); setSelectedVoice(""); }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
@@ -522,7 +522,7 @@ export function TtsExampleCard({ providerId }) {
                 className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               />
               {input && (
-                <button
+                <button aria-label="Close"
                   type="button"
                   onClick={() => setInput("")}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
@@ -545,7 +545,7 @@ export function TtsExampleCard({ providerId }) {
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-none"
                 />
                 {style && (
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setStyle("")}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
@@ -656,7 +656,7 @@ export function TtsExampleCard({ providerId }) {
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 rounded-t-xl">
               <h3 className="text-sm font-semibold">Select Language</h3>
-              <button onClick={() => setModalOpen(false)} className="text-text-muted hover:text-primary transition-colors">
+              <button aria-label="Close" onClick={() => setModalOpen(false)} className="text-text-muted hover:text-primary transition-colors">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>

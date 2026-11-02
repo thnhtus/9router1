@@ -335,7 +335,7 @@ export function GenericExampleCard({ providerId, kind }) {
               className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
             />
             {input && (
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => setInput("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
@@ -357,7 +357,7 @@ export function GenericExampleCard({ providerId, kind }) {
                 className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               />
               {question && (
-                <button
+                <button aria-label="Close"
                   type="button"
                   onClick={() => setQuestion("")}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
@@ -381,7 +381,7 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                 />
                 {refImage && (
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setRefImage("")}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
@@ -416,7 +416,7 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                 />
                 {maskImage && (
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setMaskImage("")}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"

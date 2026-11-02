@@ -189,6 +189,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         <div className="flex shrink-0 flex-col">
           <button
             onClick={onMoveUp}
+            aria-label="Move up"
             disabled={isFirst}
             className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
@@ -196,6 +197,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           </button>
           <button
             onClick={onMoveDown}
+            aria-label="Move down"
             disabled={isLast}
             className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >

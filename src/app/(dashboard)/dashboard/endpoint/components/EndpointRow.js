@@ -10,7 +10,7 @@ export default function EndpointRow({ label, url, copyId, copied, onCopy, badge,
           (badge === "CF" || badge === "TS") ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
         }`}>{label}</span>
       <Input value={url} readOnly className="flex-1 font-mono text-sm" />
-      <button
+      <button aria-label="Copy"
         onClick={() => onCopy(url, copyId)}
         className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
       >

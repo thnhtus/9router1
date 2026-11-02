@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
+import { Badge, Button, Card, CardSkeleton, ErrorState, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
 function getStatusVariant(status) {
@@ -30,6 +30,7 @@ function normalizeFormData(data = {}) {
 export default function ProxyPoolsPage() {
   const [proxyPools, setProxyPools] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showBatchImportModal, setShowBatchImportModal] = useState(false);
   const [showVercelModal, setShowVercelModal] = useState(false);
@@ -75,8 +76,10 @@ export default function ProxyPoolsPage() {
       if (res.ok) {
         setProxyPools(data.proxyPools || []);
       }
+      setLoadError(!res.ok);
     } catch (error) {
       console.log("Error fetching proxy pools:", error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -611,6 +614,7 @@ export default function ProxyPoolsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
+      {loadError && <ErrorState message="Couldn't load data. Check that the 9Router server is running, then retry." onRetry={fetchProxyPools} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold sm:text-2xl">Proxy Pools</h1>

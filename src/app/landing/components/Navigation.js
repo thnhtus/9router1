@@ -40,7 +40,7 @@ export default function Navigation() {
           >
             Get Started
           </button>
-          <button 
+          <button aria-label="Close" 
             className="md:hidden text-white"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >

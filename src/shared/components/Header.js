@@ -233,6 +233,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         {showMenuButton && (
           <button
             onClick={onMenuClick}
+            aria-label="Open menu"
             className="text-text-main hover:text-primary transition-colors"
           >
             <span className="material-symbols-outlined">menu</span>
@@ -353,6 +354,7 @@ function HeaderSearch() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
+        aria-label={placeholder || "Search"}
         className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
       />
       {query && (

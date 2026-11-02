@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import {
   Card,
   CardSkeleton,
+  ErrorState,
   Badge,
   Button,
   Toggle,
@@ -100,6 +101,8 @@ export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
@@ -161,14 +164,16 @@ export default function ProvidersPage() {
         if (connectionsRes.ok)
           setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+        setLoadError(!connectionsRes.ok || !nodesRes.ok);
       } catch (error) {
         console.log("Error fetching data:", error);
+        setLoadError(true);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [reloadKey]);
 
   const getProviderStats = (providerId, authType) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
@@ -404,6 +409,7 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {loadError && <ErrorState message="Couldn't load data. Check that the 9Router server is running, then retry." onRetry={() => setReloadKey((k) => k + 1)} />}
       <div className="flex items-center justify-end">
         <select
           value={statusFilter}

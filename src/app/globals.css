@@ -221,6 +221,26 @@ body {
 /* iOS keyboard accent */
 input, textarea {
   accent-color: var(--color-primary);
+  caret-color: var(--color-primary);
+}
+
+/* Keyboard focus: one brand ring everywhere (many controls use outline-none) */
+:where(a, button, [role="button"], [role="switch"], [role="tab"], [tabindex], summary, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+:where(input, select, textarea):focus-visible { outline-offset: 0; }
+
+a { text-underline-offset: 0.2em; }
+table, time, .tabular-nums { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Scrollbar (custom-scrollbar utility kept for compat) */
