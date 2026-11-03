@@ -14,6 +14,7 @@ import { ConfirmModal } from "./Modal";
 import {
   Sidebar as UISidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -33,6 +34,11 @@ const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "syste
 // Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
 const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
+// Unlayered `.material-symbols-outlined { font-size:24px }` in globals.css outranks Tailwind utilities, hence `!`.
+const ICON = "material-symbols-outlined text-[18px]! leading-none";
+// Dark: brightness carries state (muted → full ink); light: neutral pill. Colour stays on data, not chrome.
+const ROW = "h-8 gap-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] data-active:bg-black/[0.06] dark:data-active:bg-white/[0.07] text-sidebar-foreground/60 hover:text-sidebar-foreground data-active:text-sidebar-foreground [&>.material-symbols-outlined]:text-sidebar-foreground/45 hover:[&>.material-symbols-outlined]:text-sidebar-foreground/80 data-active:[&>.material-symbols-outlined]:text-sidebar-foreground";
+
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
@@ -48,7 +54,7 @@ const navItems = [
 ];
 
 const debugItems = [
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  { href: "/dashboard/console-log", label: "Console Log", icon: "receipt_long" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
@@ -133,12 +139,20 @@ export default function Sidebar() {
       <SidebarMenuButton
         isActive={active}
         tooltip={label}
+        className={cn(ROW, "group/link")}
         render={external ? <a href={href} target="_blank" rel="noreferrer" /> : <Link href={href} onClick={closeMobile} />}
       >
-        <span className={cn("material-symbols-outlined text-[18px]", active && "fill-1")}>{icon}</span>
+        <span className={cn(ICON, active && "fill-1")}>{icon}</span>
         <span>{label}</span>
+        {external && !badge && (
+          <span aria-hidden="true" className={cn(ICON, "ml-auto text-[14px]! opacity-0 transition-opacity group-hover/link:opacity-60")}>arrow_outward</span>
+        )}
       </SidebarMenuButton>
-      {badge && <SidebarMenuBadge className="text-[10px] font-semibold text-orange-400">{badge}</SidebarMenuBadge>}
+      {badge && (
+        <SidebarMenuBadge className="h-4 rounded px-1 text-[10px] font-semibold tracking-wide text-orange-500 bg-orange-500/10 dark:text-orange-300">
+          {badge}
+        </SidebarMenuBadge>
+      )}
     </SidebarMenuItem>
   );
   const mediaActive = pathname.startsWith("/dashboard/media-providers");
@@ -160,11 +174,11 @@ export default function Sidebar() {
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" tooltip={APP_CONFIG.name} render={<Link href="/dashboard" onClick={closeMobile} />}>
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-white">
-                  <span className="material-symbols-outlined text-[18px]">hub</span>
+                  <span className={ICON}>hub</span>
                 </div>
                 <div className="flex min-w-0 flex-col leading-tight">
-                  <span className="truncate font-semibold tracking-tight">{APP_CONFIG.name}</span>
-                  <span className="text-xs text-sidebar-foreground/50">v{APP_CONFIG.version}</span>
+                  <span className="truncate text-[15px] font-semibold tracking-tight">{APP_CONFIG.name}</span>
+                  <span className="text-[11px] tabular-nums text-sidebar-foreground/45">v{APP_CONFIG.version}</span>
                 </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -195,26 +209,36 @@ export default function Sidebar() {
           )}
         </SidebarHeader>
 
-        <SidebarContent className="custom-scrollbar">
+        <SidebarContent className="[scrollbar-width:none]!">
           <SidebarGroup>
             <SidebarMenu>{navItems.map((i) => item(i.href, i.label, i.icon))}</SidebarMenu>
           </SidebarGroup>
 
-          <SidebarGroup>
-            <SidebarGroupLabel className="uppercase tracking-wider text-sidebar-foreground/40">System</SidebarGroupLabel>
+          <SidebarGroup className="pt-4">
+            <SidebarGroupLabel className="h-7 text-[12px] font-normal text-sidebar-foreground/40">System</SidebarGroupLabel>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={mediaActive} tooltip="Media Providers" aria-expanded={mediaOpen} onClick={() => setMediaOpen((v) => !v)}>
-                  <span className="material-symbols-outlined text-[18px]">perm_media</span>
+                <SidebarMenuButton
+                  isActive={mediaActive && !mediaOpen}
+                  tooltip="Media Providers"
+                  aria-expanded={mediaOpen}
+                  className={cn(ROW, mediaActive && "text-sidebar-foreground")}
+                  onClick={() => setMediaOpen((v) => !v)}
+                >
+                  <span className={cn(ICON, mediaActive && "fill-1")}>perm_media</span>
                   <span>Media Providers</span>
-                  <span className={cn("material-symbols-outlined ml-auto text-[16px] transition-transform", mediaOpen && "rotate-180")}>expand_more</span>
+                  <span aria-hidden="true" className={cn(ICON, "ml-auto text-[16px]! transition-transform duration-200", mediaOpen && "rotate-180")}>expand_more</span>
                 </SidebarMenuButton>
                 {mediaOpen && (
                   <SidebarMenuSub>
                     {mediaItems.map((k) => (
                       <SidebarMenuSubItem key={k.id}>
-                        <SidebarMenuSubButton isActive={pathname.startsWith(k.href)} render={<Link href={k.href} onClick={closeMobile} />}>
-                          <span className="material-symbols-outlined text-[16px]">{k.icon}</span>
+                        <SidebarMenuSubButton
+                          isActive={pathname.startsWith(k.href)}
+                          className="text-sidebar-foreground/55 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:text-sidebar-foreground data-active:bg-black/[0.06] dark:data-active:bg-white/[0.07] data-active:font-medium data-active:text-sidebar-foreground [&>.material-symbols-outlined]:text-current!"
+                          render={<Link href={k.href} onClick={closeMobile} />}
+                        >
+                          <span className={cn(ICON, "text-[16px]!")}>{k.icon}</span>
                           <span>{k.label}</span>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
@@ -226,12 +250,17 @@ export default function Sidebar() {
               {debugItems
                 .filter((i) => i.href !== "/dashboard/translator" || enableTranslator)
                 .map((i) => item(i.href, i.label, i.icon))}
-              {item("https://9remote.cc", "9Remote", "computer", { active: false, external: true, badge: "HOT" })}
-              {item("https://9english.net/", "9English", "translate", { active: false, external: true })}
-              {item("/dashboard/profile", "Settings", "settings")}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
+
+        <SidebarFooter className="border-t border-sidebar-border/60 pb-3">
+          <SidebarMenu>
+            {item("https://9remote.cc", "9Remote", "computer", { active: false, external: true, badge: "HOT" })}
+            {item("https://9english.net/", "9English", "translate", { active: false, external: true })}
+            {item("/dashboard/profile", "Settings", "settings")}
+          </SidebarMenu>
+        </SidebarFooter>
         <SidebarRail />
       </UISidebar>
 
