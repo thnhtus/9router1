@@ -195,9 +195,9 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-primary text-base">login</span>
           <span className="text-xs sm:text-sm font-semibold">Browser Login</span>
-          <span className="text-[11px] text-text-muted">No Desktop required</span>
+          <span className="text-[11px] text-muted-foreground">No Desktop required</span>
         </div>
-        <span className="text-[11px] text-text-muted">Weekly quota</span>
+        <span className="text-[11px] text-muted-foreground">Weekly quota</span>
       </div>
       {sessPolling ? (
         <div className="flex flex-col gap-1.5">
@@ -235,7 +235,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
                 progress_activity
               </span>
             </div>
-            <p className="text-sm text-text-muted">Reading local MiMo Desktop credentials...</p>
+            <p className="text-sm text-muted-foreground">Reading local MiMo Desktop credentials...</p>
           </div>
         )}
 
@@ -254,7 +254,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
         {/* Found local desktop credentials */}
         {phase === "found" && detectResult && (
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-text-muted px-0.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground px-0.5">
               <span className="material-symbols-outlined text-primary text-sm">desktop_windows</span>
               <span>Desktop Plan · Local credentials</span>
             </div>
@@ -308,7 +308,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-border" />
               </div>
-              <div className="relative flex justify-center text-xs text-text-muted">
+              <div className="relative flex justify-center text-xs text-muted-foreground">
                 <span className="bg-card px-2">or</span>
               </div>
             </div>
@@ -345,7 +345,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
         {/* Cluster selection sub-modal */}
         {showClusterModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="relative w-full max-w-sm bg-surface border border-border-subtle rounded-[14px] shadow-2xl p-5 flex flex-col gap-3.5 animate-in zoom-in-95 duration-150">
+            <div className="relative w-full max-w-sm bg-card border border-border/60 rounded-[14px] shadow-2xl p-5 flex flex-col gap-3.5 animate-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-lg">public</span>
@@ -354,13 +354,13 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
                 <button aria-label="Close"
                   type="button"
                   onClick={() => setShowClusterModal(false)}
-                  className="text-text-muted hover:text-text-primary p-1 rounded-md transition-colors cursor-pointer"
+                  className="text-muted-foreground hover:text-foreground p-1 rounded-md transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-lg">close</span>
                 </button>
               </div>
 
-              <p className="text-xs text-text-muted">Choose the region cluster of your Xiaomi account:</p>
+              <p className="text-xs text-muted-foreground">Choose the region cluster of your Xiaomi account:</p>
 
               <div className="flex flex-col gap-2">
                 {CLUSTERS.map((c) => (
@@ -375,7 +375,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
                       <div className="text-sm font-semibold group-hover:text-primary transition-colors">
                         {c.name}
                       </div>
-                      <div className="text-xs text-text-muted mt-0.5">{c.host}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{c.host}</div>
                     </div>
                   </button>
                 ))}

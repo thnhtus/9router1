@@ -628,7 +628,7 @@ export default function ModelSelectModal({
       footer={null}
     >
       {/* Info bar */}
-      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
+      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-muted-foreground">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
         <span>
           {allowProviderWildcard
@@ -640,7 +640,7 @@ export default function ModelSelectModal({
       {/* Search & batch actions */}
       <div className="mb-3 space-y-2">
         <div className="relative">
-          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">
+          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[16px]">
             search
           </span>
           <input
@@ -652,7 +652,7 @@ export default function ModelSelectModal({
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-20 py-1.5 bg-surface border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="w-full pl-8 pr-20 py-1.5 bg-card border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
             {parsedQuery.isRegex && (
@@ -669,7 +669,7 @@ export default function ModelSelectModal({
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="text-text-muted hover:text-text-main cursor-pointer p-0.5 rounded"
+                className="text-muted-foreground hover:text-foreground cursor-pointer p-0.5 rounded"
                 title="Clear search"
               >
                 <span className="material-symbols-outlined text-[14px] leading-none">close</span>
@@ -679,7 +679,7 @@ export default function ModelSelectModal({
         </div>
 
         {!closeOnSelect && visibleModels.length > 0 && (
-          <div className="flex items-center justify-between px-1 text-[11px] text-text-muted">
+          <div className="flex items-center justify-between px-1 text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span>{visibleModels.length} models</span>
               {addedModelValues.length > 0 && (
@@ -701,7 +701,7 @@ export default function ModelSelectModal({
                 <button
                   type="button"
                   onClick={handleDeselectAllVisible}
-                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-border/40 text-text-muted hover:text-text-main hover:bg-border/60 transition-colors cursor-pointer"
+                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-border/40 text-muted-foreground hover:text-foreground hover:bg-border/60 transition-colors cursor-pointer"
                   title="Deselect all filtered models"
                 >
                   Deselect All ({visibleAdded.length})
@@ -717,10 +717,10 @@ export default function ModelSelectModal({
         {/* Combos section - always first */}
         {filteredCombos.length > 0 && (
           <div>
-            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-card py-0.5">
               <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
               <span className="text-xs font-medium text-primary">Combos</span>
-              <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
+              <span className="text-[10px] text-muted-foreground">({filteredCombos.length})</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {filteredCombos.map((combo) => {
@@ -734,8 +734,8 @@ export default function ModelSelectModal({
                       ${isSelected
                         ? "bg-primary text-white border-primary"
                         : addedModelValues.includes(combo.name)
-                          ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                          ? "bg-primary border-primary text-white hover:bg-primary/90"
+                          : "bg-card border-border text-foreground hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
                   >
@@ -758,7 +758,7 @@ export default function ModelSelectModal({
           return (
             <div key={providerId}>
               {/* Provider header */}
-              <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5 z-10">
+              <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-card py-0.5 z-10">
                 <ProviderIcon
                   src={`/providers/${providerId}.png`}
                   alt={group.name}
@@ -773,7 +773,7 @@ export default function ModelSelectModal({
                     title={isWildcardAdded ? `Click to remove wildcard ${wildcardValue}` : `Click to allow all models from ${group.name} (${wildcardValue})`}
                     className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-all cursor-pointer border ${
                       isWildcardAdded
-                        ? "bg-primary text-white border-primary shadow-2xs hover:bg-primary-hover"
+                        ? "bg-primary text-white border-primary shadow-2xs hover:bg-primary/90"
                         : "text-primary border-transparent hover:bg-primary/10 hover:border-primary/20"
                     }`}
                   >
@@ -781,7 +781,7 @@ export default function ModelSelectModal({
                       <span className="material-symbols-outlined leading-none text-[12px]">check</span>
                     )}
                     <span>{group.name}</span>
-                    <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${isWildcardAdded ? "bg-white/20 text-white" : "text-text-muted bg-sidebar border border-border/50"}`}>
+                    <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${isWildcardAdded ? "bg-white/20 text-white" : "text-muted-foreground bg-sidebar border border-border/50"}`}>
                       {wildcardValue}
                     </span>
                   </button>
@@ -790,7 +790,7 @@ export default function ModelSelectModal({
                     {group.name}
                   </span>
                 )}
-                <span className="text-[10px] text-text-muted">
+                <span className="text-[10px] text-muted-foreground">
                   ({group.models.length})
                 </span>
               </div>
@@ -807,12 +807,12 @@ export default function ModelSelectModal({
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
                       ${isPlaceholder
-                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
+                        ? "border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-primary bg-card italic"
                         : isSelected
                           ? "bg-primary text-white border-primary"
                           : addedModelValues.includes(model.value)
-                            ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                            : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                            ? "bg-primary border-primary text-white hover:bg-primary/90"
+                            : "bg-card border-border text-foreground hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
                   >
@@ -847,7 +847,7 @@ export default function ModelSelectModal({
       })}
 
       {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
-        <div className="text-center py-4 text-text-muted">
+        <div className="text-center py-4 text-muted-foreground">
           <span className="material-symbols-outlined text-2xl mb-1 block">
             search_off
           </span>

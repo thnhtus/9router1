@@ -235,7 +235,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
         {mode === "bulk" && (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               {isCloudflareAi
                 ? <>One key per line. Format: <code>name|apiKey|accountId</code> or just <code>apiKey</code> (auto-named by index).</>
                 : provider === "qoder" || provider === "qoder-cn"
@@ -244,7 +244,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               }
             </p>
             <textarea
-              className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded border border-primary/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
               placeholder={bulkPlaceholder}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
@@ -304,12 +304,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           </div>
         )}
         {isXaiApiKey && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
           </p>
         )}
         {isCookie && authHint && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             {authHint}
             {website && (
               <>
@@ -338,7 +338,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           />
         )}
         {isOllamaLocal && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             Leave blank to use <code>http://localhost:11434</code>. For remote Ollama, enter the full host URL (e.g. <code>http://192.168.1.10:11434</code>).
           </p>
         )}
@@ -351,12 +351,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <p className="text-xs text-red-500 break-words">{error}</p>
         )}
         {isCompatible && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
           </p>
         )}
         {isCloudflareAi && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-primary/20">
             <h3 className="font-semibold mb-3 text-sm">Cloudflare Workers AI</h3>
             <Input
               label="Account ID"
@@ -364,13 +364,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               onChange={(e) => setCloudflareData({ ...cloudflareData, accountId: e.target.value })}
               placeholder="abc123def456..."
             />
-            <p className="text-xs text-text-muted mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Find your Account ID in the right sidebar of <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">dash.cloudflare.com</a>
             </p>
           </div>
         )}
         {usesAwsCredentialForm && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-primary/20">
             <h3 className="font-semibold mb-3 text-sm">AWS Bedrock Credentials</h3>
             <div className="flex flex-col gap-3">
               <Input
@@ -386,7 +386,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 placeholder="us-east-1"
               />
             </div>
-            <p className="text-xs text-text-muted mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Set a profile from <code>~/.aws/config</code> and leave the API key empty, then run
               {" "}<code>aws sso login --profile {bedrockData.profile || "my-sso-profile"}</code>.
               Credentials refresh automatically.
@@ -406,14 +406,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 placeholder="FwoGZXIvYXdz..."
               />
             </div>
-            <p className="text-xs text-text-muted mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               For static keys instead: put the AWS <strong>secret</strong> access key in the API Key
               field above and the access key id here. A profile, if set, takes precedence.
             </p>
           </div>
         )}
         {isAzure && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-primary/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
             <div className="flex flex-col gap-3">
               <Input
@@ -463,12 +463,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         />
 
         {(proxyPools || []).length === 0 && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             No active proxy pools available. Create one in Proxy Pools page first.
           </p>
         )}
 
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-muted-foreground">
           Legacy manual proxy fields are still accepted by API for backward compatibility.
         </p>
 

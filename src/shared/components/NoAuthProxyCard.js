@@ -84,7 +84,7 @@ export default function NoAuthProxyCard({ providerId }) {
         </div>
         <div className="flex-1">
           <p className="text-sm font-medium">No authentication required</p>
-          <p className="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.</p>
+          <p className="text-xs text-muted-foreground">This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.</p>
         </div>
         {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
@@ -102,12 +102,12 @@ export default function NoAuthProxyCard({ providerId }) {
       />
 
       <div className="flex flex-col gap-2 mt-4">
-        <label className="text-sm font-medium text-text-main">Rotation Strategy</label>
+        <label className="text-sm font-medium text-foreground">Rotation Strategy</label>
         <select
           value={rotateStrategy}
           onChange={(e) => handleStrategyChange(e.target.value)}
           disabled={saving}
-          className="py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all disabled:opacity-50"
+          className="py-2 px-3 text-sm text-foreground bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all disabled:opacity-50"
         >
           {STRATEGIES.map((s) => (
             <option key={s.value} value={s.value} disabled={s.value !== "none" && !canRotate}>
@@ -115,7 +115,7 @@ export default function NoAuthProxyCard({ providerId }) {
             </option>
           ))}
         </select>
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-muted-foreground">
           {!canRotate
             ? `Need at least 2 active proxy pools for rotation.`
             : isRotation

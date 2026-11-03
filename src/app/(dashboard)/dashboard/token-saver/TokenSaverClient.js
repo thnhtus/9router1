@@ -510,7 +510,7 @@ export default function TokenSaverClient() {
                 (RTK)
               </a>
             </p>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               git/grep/ls/tree/logs → 60-90% fewer input tokens
             </p>
           </div>
@@ -546,7 +546,7 @@ export default function TokenSaverClient() {
                 {headroomRunning ? "Manage" : "Setup"}
               </button>
             </div>
-            <p className="text-sm text-text-muted mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Compress prompts via /v1/compress before routing to the model
             </p>
           </div>
@@ -558,7 +558,7 @@ export default function TokenSaverClient() {
         {headroomStatus.installed && (
           <div className="mb-3 ml-1 pl-3 pb-4 border-l-2 border-border">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-text-muted">
+              <span className="text-xs text-muted-foreground">
                 Compression extras
                 {headroomExtras.version ? ` · v${headroomExtras.version}` : ""}:
               </span>
@@ -575,7 +575,7 @@ export default function TokenSaverClient() {
                   return (
                     <div
                       key={extra}
-                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-success/40 bg-success/5 text-text"
+                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-success/40 bg-success/5 text-foreground"
                       title={extraTitle}
                     >
                       <Toggle
@@ -604,7 +604,7 @@ export default function TokenSaverClient() {
                     className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border cursor-pointer transition-colors ${
                       pending
                         ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-text-muted hover:bg-surface-2"
+                        : "border-border text-muted-foreground hover:bg-muted"
                     }`}
                     title={extraTitle}
                   >
@@ -635,14 +635,14 @@ export default function TokenSaverClient() {
               <p className="text-xs text-error mt-1">{extrasActionError}</p>
             )}
             {restartingProxy && (
-              <p className="text-xs text-text-muted mt-1">Restarting proxy…</p>
+              <p className="text-xs text-muted-foreground mt-1">Restarting proxy…</p>
             )}
             {(extrasActionLoading || removingExtra) && installLog && (
-              <pre className="mt-2 max-h-32 overflow-auto rounded bg-surface-2 p-2 text-[10px] leading-tight text-text-muted whitespace-pre-wrap">
+              <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2 text-[10px] leading-tight text-muted-foreground whitespace-pre-wrap">
                 {installLog}
               </pre>
             )}
-            <p className="text-xs text-text-muted mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Installing adds the package; use <code>on</code>/<code>off</code>{" "}
               to activate it (restarts the proxy). Default install is{" "}
               <code>[proxy]</code> only (SmartCrusher for JSON). Adding{" "}
@@ -666,7 +666,7 @@ export default function TokenSaverClient() {
                 (Caveman)
               </a>
             </p>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Terse-style system prompt → ~65% fewer output tokens (up to 87%)
             </p>
           </div>
@@ -681,7 +681,7 @@ export default function TokenSaverClient() {
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                         cavemanLevel === lvl.id
                           ? "bg-primary text-white border-primary"
-                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                          : "bg-transparent border-border text-muted-foreground hover:bg-muted"
                       }`}
                       title={lvl.desc}
                     >
@@ -716,7 +716,7 @@ export default function TokenSaverClient() {
                 (Ponytail)
               </a>
             </p>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Bias the model toward minimal code: YAGNI, reuse stdlib,
               deletion over addition
             </p>
@@ -732,7 +732,7 @@ export default function TokenSaverClient() {
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                         ponytailLevel === lvl.id
                           ? "bg-primary text-white border-primary"
-                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                          : "bg-transparent border-border text-muted-foreground hover:bg-muted"
                       }`}
                       title={lvl.desc}
                     >
@@ -757,7 +757,7 @@ export default function TokenSaverClient() {
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">Custom system prompt</p>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Appends your own instruction to every request, independently of
               the savers above
             </p>
@@ -779,7 +779,7 @@ export default function TokenSaverClient() {
               placeholder="e.g. Prefer editing existing files over creating new ones."
               className="w-full rounded border border-border bg-transparent p-2 text-xs"
             />
-            <p className="text-xs text-text-muted mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Applied to every provider and model. Sent as-is to upstream; an
               empty prompt injects nothing.
             </p>
@@ -818,7 +818,7 @@ export default function TokenSaverClient() {
                 Dashboard
               </a>
             </div>
-            <p className="text-sm text-text-muted mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Transforms large textual context into optimized images before
               sending to the LLM. Ideal for huge prompts, tool outputs and long
               conversations.
@@ -852,7 +852,7 @@ export default function TokenSaverClient() {
               href="/api/headroom/proxy/dashboard"
               target="_blank"
               rel="noreferrer"
-              className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+              className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-muted"
             >
               Open Headroom Dashboard
             </a>
@@ -866,7 +866,7 @@ export default function TokenSaverClient() {
               placeholder="http://localhost:8787"
               className="font-mono text-sm"
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Use a local proxy for Start/Stop, or an external Docker sidecar
               like http://headroom:8787.
             </p>
@@ -880,7 +880,7 @@ export default function TokenSaverClient() {
               placeholder="3000"
               className="font-mono text-sm"
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Request timeout in milliseconds. Defaults to 3000 ms.
             </p>
           </div>
@@ -960,7 +960,7 @@ export default function TokenSaverClient() {
         onClose={() => setShowPxpipeModal(false)}
       >
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-text-muted">
+          <p className="text-sm text-muted-foreground">
             Compress prompts using multimodal encoding. Runs in-process — no
             extra server or environment variables required.
           </p>
@@ -980,7 +980,7 @@ export default function TokenSaverClient() {
                     {check.ok ? "●" : "○"} {check.label}
                   </span>
                   {check.detail && (
-                    <span className="text-text-muted font-mono truncate max-w-[50%]">{check.detail}</span>
+                    <span className="text-muted-foreground font-mono truncate max-w-[50%]">{check.detail}</span>
                   )}
                 </div>
               ))}
@@ -999,7 +999,7 @@ export default function TokenSaverClient() {
               >
                 {pxpipeActionLoading || pxpipeStatus.installing ? "Installing…" : "Install"}
               </Button>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted-foreground">
                 Installs the npm package <code className="font-mono">pxpipe-proxy</code> into
                 the 9Router data directory. May take a few minutes.
               </p>
@@ -1025,7 +1025,7 @@ export default function TokenSaverClient() {
               </Button>
               <a
                 href="/dashboard/pxpipe#logs"
-                className="col-span-2 rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
+                className="col-span-2 rounded border border-border px-4 py-2 text-center text-sm hover:bg-muted"
               >
                 Open Logs
               </a>
@@ -1040,7 +1040,7 @@ export default function TokenSaverClient() {
               placeholder="25000"
               className="font-mono text-sm"
             />
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Requests smaller than this bypass PXPIPE and are sent as-is.
             </p>
           </div>

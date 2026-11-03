@@ -188,7 +188,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Method Selection */}
         {!selectedMethod && (
           <div className="space-y-3">
-            <p className="text-sm text-text-muted mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Choose your authentication method:
             </p>
 
@@ -201,7 +201,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">shield</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">AWS Builder ID</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     Recommended for most users. Free AWS account required.
                   </p>
                 </div>
@@ -217,7 +217,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">business</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">AWS IAM Identity Center</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     For enterprise users with custom AWS IAM Identity Center.
                   </p>
                 </div>
@@ -233,7 +233,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">key</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">API Key</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     Use a long-lived Kiro/CodeWhisperer API key (headless auth).
                   </p>
                 </div>
@@ -249,7 +249,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">account_circle</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Google Account</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     Login with your Google account (manual callback).
                   </p>
                 </div>
@@ -265,7 +265,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">code</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">GitHub Account</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     Login with your GitHub account (manual callback).
                   </p>
                 </div>
@@ -281,7 +281,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">file_upload</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Import Token</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     Paste refresh token from Kiro IDE.
                   </p>
                 </div>
@@ -297,7 +297,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <span className="material-symbols-outlined text-primary mt-0.5">data_object</span>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Import CLIProxyAPI JSON</h3>
-                  <p className="text-sm text-text-muted">
+                  <p className="text-sm text-muted-foreground">
                     Paste external_idp auth JSON from CLIProxyAPI/Kiro Microsoft login.
                   </p>
                 </div>
@@ -319,7 +319,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 placeholder="https://your-org.awsapps.com/start"
                 className="font-mono text-sm"
               />
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Your organization&apos;s AWS IAM Identity Center URL
               </p>
             </div>
@@ -334,7 +334,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 placeholder="us-east-1"
                 className="font-mono text-sm"
               />
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 AWS region for your Identity Center (default: us-east-1)
               </p>
             </div>
@@ -389,7 +389,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 placeholder="us-east-1"
                 className="font-mono text-sm"
               />
-              <p className="text-xs text-text-muted mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 AWS region for the key (default: us-east-1)
               </p>
             </div>
@@ -479,7 +479,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                   </span>
                 </div>
                 <h3 className="text-lg font-semibold mb-2">Auto-detecting token...</h3>
-                <p className="text-sm text-text-muted">
+                <p className="text-sm text-muted-foreground">
                   Reading from AWS SSO cache
                 </p>
               </div>

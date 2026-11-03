@@ -181,7 +181,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
     <Modal isOpen={isOpen} title={translate("Bulk Add Grok CLI Accounts")} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             {translate("Upload multiple .json files or paste JSON array / object.")}
           </p>
           <input
@@ -211,7 +211,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
           className={`relative rounded border transition-colors ${
             isDragging
               ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-              : "border-accent/30 bg-sidebar"
+              : "border-primary/30 bg-sidebar"
           }`}
         >
           <textarea
@@ -255,7 +255,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
               ✗ {result.failed} {translate("failed")}
             </div>
             {failedItems.length > 0 && (
-              <ul className="rounded border border-accent/20 bg-sidebar/50 p-2 text-xs font-mono max-h-40 overflow-y-auto">
+              <ul className="rounded border border-primary/20 bg-sidebar/50 p-2 text-xs font-mono max-h-40 overflow-y-auto">
                 {failedItems.map((item) => (
                   <li key={item.index} className="text-red-400">
                     [{item.index}] {item.error}

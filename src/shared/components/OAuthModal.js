@@ -772,14 +772,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 <button
                   type="button"
                   onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-primary"}`}
                 >
                   🌐 Sign in with browser
                 </button>
                 <button
                   type="button"
                   onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-primary"}`}
                 >
                   🔑 Paste token
                 </button>
@@ -796,7 +796,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 )}
                 {step === "input" && (
                   <div className="space-y-3">
-                    <p className="text-sm text-text-muted">
+                    <p className="text-sm text-muted-foreground">
                       Popup was blocked. After authorizing in the browser, paste the full callback URL here:
                     </p>
                     <Input
@@ -824,7 +824,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                       : ` Install ${PASTE_TOKEN_PROVIDERS[provider].ideName} IDE to get the token, or use "Sign in with browser".`}
                   </div>
                 )}
-                <p className="text-sm text-text-muted">{PASTE_TOKEN_PROVIDERS[provider].instructions}</p>
+                <p className="text-sm text-muted-foreground">{PASTE_TOKEN_PROVIDERS[provider].instructions}</p>
                 <Input
                   value={pasteToken}
                   onChange={(e) => setPasteToken(e.target.value)}
@@ -856,7 +856,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             {/* Divider */}
             <div className="flex items-center gap-3 my-1">
               <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">Or paste callback URL manually</span>
               <div className="flex-1 h-px bg-border" />
             </div>
 
@@ -878,7 +878,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 <p className="text-sm font-medium mb-2">
                   Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : isKimchiProvider ? "callback URL or copied token" : "callback URL"} here
                 </p>
-                <p className="text-xs text-text-muted mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   {provider === "xai"
                     ? "If xAI shows a code instead of redirecting, paste that code here."
                     : isKimchiProvider
@@ -909,11 +909,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "waiting" && isDeviceCode && deviceData && (
           <>
             <div className="text-center py-4">
-              <p className="text-sm text-text-muted mb-4">
+              <p className="text-sm text-muted-foreground mb-4">
                 Visit the login URL below and authorize:
               </p>
               <div className="bg-sidebar p-4 rounded-lg mb-4">
-                <p className="text-xs text-text-muted mb-1">Login URL</p>
+                <p className="text-xs text-muted-foreground mb-1">Login URL</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-sm break-all">{deviceLoginUrl}</code>
                   <Button
@@ -936,7 +936,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </div>
               {deviceData.user_code && (
                 <div className="bg-primary/10 p-4 rounded-lg">
-                  <p className="text-xs text-text-muted mb-1">Your Code</p>
+                  <p className="text-xs text-muted-foreground mb-1">Your Code</p>
                   <div className="flex items-center justify-center gap-2">
                     <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
                     <Button
@@ -950,7 +950,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               )}
             </div>
             {polling && (
-              <div className="flex items-center justify-center gap-2 text-sm text-text-muted">
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <span className="material-symbols-outlined animate-spin">progress_activity</span>
                 Waiting for authorization...
               </div>
@@ -965,7 +965,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
-            <p className="text-sm text-text-muted mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Your {providerInfo.name} account has been connected.
             </p>
             <Button onClick={handleClose} fullWidth>

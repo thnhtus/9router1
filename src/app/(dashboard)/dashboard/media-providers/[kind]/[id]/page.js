@@ -63,7 +63,7 @@ export default function MediaProviderDetailPage() {
   if (!isCustom && !builtInProvider) return notFound();
   if (isCustom && !customLoading && !customNode) return notFound();
   if (isCustom && customLoading) {
-    return <div className="text-text-muted text-sm py-12 text-center">Loading...</div>;
+    return <div className="text-muted-foreground text-sm py-12 text-center">Loading...</div>;
   }
 
   const kinds = isCustom ? ["embedding"] : (provider.serviceKinds ?? ["llm"]);
@@ -75,7 +75,7 @@ export default function MediaProviderDetailPage() {
       <div>
         <Link
           href={`/dashboard/media-providers/${kind}`}
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           {kindConfig.label}
@@ -161,7 +161,7 @@ export default function MediaProviderDetailPage() {
         <NoAuthProxyCard providerId={id} />
       ) : kind === "stt" && OAUTH_PROVIDERS[id] ? (
         <Card>
-          <p className="text-sm text-text-muted mb-3">This service shares your existing OAuth connections.</p>
+          <p className="text-sm text-muted-foreground mb-3">This service shares your existing OAuth connections.</p>
           <Link href={`/dashboard/providers/${id}`} className="text-primary hover:underline">Manage OAuth connections →</Link>
         </Card>
       ) : (

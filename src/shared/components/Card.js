@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/shared/utils/cn";
+import { cn } from "cn";
 
 export default function Card({
   children,
@@ -24,10 +24,11 @@ export default function Card({
 
   return (
     <div
+      data-slot="card"
       className={cn(
-        "bg-surface border border-border-subtle",
-        elev ? "rounded-[14px] shadow-[var(--shadow-elev)]" : "rounded-[14px] shadow-[var(--shadow-soft)]",
-        hover && "hover:shadow-[var(--shadow-warm)] hover:border-brand-500/30 transition-all cursor-pointer",
+        "rounded-xl bg-card text-card-foreground ring-1 ring-foreground/10",
+        elev && "shadow-[var(--shadow-elev)]",
+        hover && "cursor-pointer transition-all hover:ring-primary/30 hover:shadow-[var(--shadow-warm)]",
         paddings[padding],
         className
       )}
@@ -37,16 +38,16 @@ export default function Card({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             {icon && (
-              <div className="p-2 rounded-[10px] bg-bg text-text-muted">
+              <div className="p-2 rounded-lg bg-muted text-muted-foreground">
                 <span className="material-symbols-outlined text-[20px]">{icon}</span>
               </div>
             )}
             <div>
               {title && (
-                <h3 className="text-text-main font-semibold">{title}</h3>
+                <h3 className="font-heading font-medium text-card-foreground">{title}</h3>
               )}
               {subtitle && (
-                <p className="text-sm text-text-muted">{subtitle}</p>
+                <p className="text-sm text-muted-foreground">{subtitle}</p>
               )}
             </div>
           </div>
@@ -62,8 +63,7 @@ Card.Section = function CardSection({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-4 rounded-[10px]",
-        "bg-bg border border-border-subtle",
+        "rounded-lg border bg-muted/40 p-4",
         className
       )}
       {...props}
@@ -78,8 +78,8 @@ Card.Row = function CardRow({ children, className, ...props }) {
     <div
       className={cn(
         "p-3 -mx-3 px-3 transition-colors",
-        "border-b border-border-subtle last:border-b-0",
-        "hover:bg-surface-2/50",
+        "border-b last:border-b-0",
+        "hover:bg-muted/50",
         className
       )}
       {...props}
@@ -99,8 +99,8 @@ Card.ListItem = function CardListItem({
     <div
       className={cn(
         "group flex items-center justify-between p-3 -mx-3 px-3",
-        "border-b border-border-subtle last:border-b-0",
-        "hover:bg-surface-2/50 transition-colors",
+        "border-b last:border-b-0",
+        "hover:bg-muted/50 transition-colors",
         className
       )}
       {...props}

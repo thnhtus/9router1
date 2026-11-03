@@ -112,12 +112,12 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or description..."
-            className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="flex-1 px-2 py-1.5 bg-card rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="px-2 py-1.5 bg-card rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
           >
             <option value="all">All</option>
             <option value="authless">Authless</option>
@@ -130,7 +130,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
         )}
 
         {loading && (
-          <div className="flex items-center gap-2 text-text-muted text-xs py-4 justify-center">
+          <div className="flex items-center gap-2 text-muted-foreground text-xs py-4 justify-center">
             <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
             <span>Loading registry...</span>
           </div>
@@ -139,7 +139,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
         {!loading && (
           <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto">
             {filtered.length === 0 && (
-              <div className="text-center text-xs text-text-muted py-6">No servers match filter</div>
+              <div className="text-center text-xs text-muted-foreground py-6">No servers match filter</div>
             )}
             {filtered.map((s) => {
               const added = addedSet.has(s.slug || s.name);
@@ -156,7 +156,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={s.iconUrl} alt="" className="size-7 rounded shrink-0 object-contain" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
                     ) : (
-                      <div className="size-7 rounded bg-surface shrink-0" />
+                      <div className="size-7 rounded bg-card shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -167,11 +167,11 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                           <span className="px-1 py-0.5 text-[10px] rounded bg-green-500/10 text-green-600">Authless</span>
                         )}
                         {s.toolCount > 0 && (
-                          <span className="text-[10px] text-text-muted">{s.toolCount} tools</span>
+                          <span className="text-[10px] text-muted-foreground">{s.toolCount} tools</span>
                         )}
                       </div>
                       {s.description && (
-                        <p className="text-[10px] text-text-muted line-clamp-2 mt-0.5">{s.description}</p>
+                        <p className="text-[10px] text-muted-foreground line-clamp-2 mt-0.5">{s.description}</p>
                       )}
                     </div>
                     <button
@@ -181,7 +181,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                         added
                           ? "bg-green-500/10 text-green-600 cursor-default"
                           : expanded
-                          ? "bg-surface border border-border text-text-muted hover:bg-black/5"
+                          ? "bg-card border border-border text-muted-foreground hover:bg-black/5"
                           : "bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20"
                       }`}
                     >
@@ -189,9 +189,9 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                     </button>
                   </div>
                   {expanded && (
-                    <div className="px-3 py-2 bg-surface/40 border-t border-border flex flex-col gap-2">
+                    <div className="px-3 py-2 bg-card/40 border-t border-border flex flex-col gap-2">
                       {isLoadingTools && (
-                        <div className="flex items-center gap-2 text-text-muted text-[10px] py-1">
+                        <div className="flex items-center gap-2 text-muted-foreground text-[10px] py-1">
                           <span className="material-symbols-outlined animate-spin text-[14px]">progress_activity</span>
                           <span>Probing server for tools...</span>
                         </div>
@@ -205,15 +205,15 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                         <p className="text-[10px] text-red-600 bg-red-500/10 px-2 py-1 rounded">Probe failed: {cache.error}</p>
                       )}
                       {!isLoadingTools && toolKeys.length === 0 && !cache?.requiresAuth && !cache?.error && (
-                        <p className="text-[10px] text-text-muted">No tools advertised by server.</p>
+                        <p className="text-[10px] text-muted-foreground">No tools advertised by server.</p>
                       )}
                       {!isLoadingTools && toolKeys.length > 0 && (
                         <>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-text-muted">{selectedCount}/{toolKeys.length} tools enabled</span>
+                            <span className="text-[10px] text-muted-foreground">{selectedCount}/{toolKeys.length} tools enabled</span>
                             <div className="flex gap-1">
                               <button onClick={() => setAllTools(s.url, true)} className="text-[10px] text-primary hover:underline">All</button>
-                              <span className="text-[10px] text-text-muted">·</span>
+                              <span className="text-[10px] text-muted-foreground">·</span>
                               <button onClick={() => setAllTools(s.url, false)} className="text-[10px] text-primary hover:underline">None</button>
                             </div>
                           </div>
@@ -246,7 +246,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
           </div>
         )}
 
-        <div className="text-[10px] text-text-muted text-right">
+        <div className="text-[10px] text-muted-foreground text-right">
           {filtered.length} of {servers.length} servers
         </div>
       </div>

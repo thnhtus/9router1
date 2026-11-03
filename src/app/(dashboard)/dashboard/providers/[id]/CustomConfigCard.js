@@ -100,7 +100,7 @@ export default function CustomConfigCard({ providerId }) {
             <Badge variant="success" size="sm">Active</Badge>
           )}
         </div>
-        <span className="material-symbols-outlined text-text-muted">
+        <span className="material-symbols-outlined text-muted-foreground">
           {expanded ? "expand_less" : "expand_more"}
         </span>
       </button>
@@ -134,7 +134,7 @@ export default function CustomConfigCard({ providerId }) {
                     title="Remove header"
                     aria-label="Remove header"
                     onClick={() => setRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : [{ name: "", value: "" }]))}
-                    className="shrink-0 text-text-muted hover:text-red-500"
+                    className="shrink-0 text-muted-foreground hover:text-red-500"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>

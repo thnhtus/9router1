@@ -61,13 +61,13 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
         {success ? (
           <div className="text-center py-8">
             <div className="text-6xl mb-4">✅</div>
-            <p className="text-lg font-medium text-text-primary">Authentication Successful!</p>
-            <p className="text-sm text-text-muted mt-2">Fresh API key obtained</p>
+            <p className="text-lg font-medium text-foreground">Authentication Successful!</p>
+            <p className="text-sm text-muted-foreground mt-2">Fresh API key obtained</p>
           </div>
         ) : (
           <>
             <div className="space-y-2">
-              <p className="text-sm text-text-muted">
+              <p className="text-sm text-muted-foreground">
                 To get a fresh API key, paste your browser cookie from{" "}
                 <a
                   href="https://platform.iflow.cn"
@@ -78,9 +78,9 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
                   platform.iflow.cn
                 </a>
               </p>
-              <div className="bg-surface-secondary p-3 rounded-lg text-xs space-y-2">
-                <p className="font-medium text-text-primary">How to get cookie:</p>
-                <ol className="list-decimal list-inside space-y-1 text-text-muted">
+              <div className="bg-muted p-3 rounded-lg text-xs space-y-2">
+                <p className="font-medium text-foreground">How to get cookie:</p>
+                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                   <li>Open platform.iflow.cn in your browser</li>
                   <li>Login to your account</li>
                   <li>Open DevTools (F12) → Application/Storage → Cookies</li>
@@ -91,14 +91,14 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-text-primary">
+              <label className="block text-sm font-medium text-foreground">
                 Cookie String
               </label>
               <textarea
                 value={cookie}
                 onChange={(e) => setCookie(e.target.value)}
                 placeholder="BXAuth=xxx; ..."
-                className="w-full px-3 py-2 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 rows={4}
                 disabled={loading}
               />

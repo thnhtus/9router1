@@ -102,7 +102,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
         {/* Mode selection */}
         {!mode && (
           <>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Choose how to authenticate with GitLab Duo:
             </p>
             <div className="grid grid-cols-2 gap-3">
@@ -113,7 +113,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
                 <span className="material-symbols-outlined text-2xl text-primary">lock_open</span>
                 <div>
                   <p className="text-sm font-medium">OAuth App</p>
-                  <p className="text-xs text-text-muted">Use a GitLab OAuth application</p>
+                  <p className="text-xs text-muted-foreground">Use a GitLab OAuth application</p>
                 </div>
               </button>
               <button
@@ -123,7 +123,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
                 <span className="material-symbols-outlined text-2xl text-primary">key</span>
                 <div>
                   <p className="text-sm font-medium">Personal Access Token</p>
-                  <p className="text-xs text-text-muted">Use a GitLab PAT with api scope</p>
+                  <p className="text-xs text-muted-foreground">Use a GitLab PAT with api scope</p>
                 </div>
               </button>
             </div>
@@ -133,7 +133,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
         {/* OAuth mode */}
         {mode === "oauth" && (
           <>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Create an OAuth app at{" "}
               <a href={`${baseUrl.trim() || GITLAB_COM}/-/profile/applications`} target="_blank" rel="noreferrer" className="text-primary underline">
                 GitLab Applications
@@ -159,7 +159,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
         {/* PAT mode */}
         {mode === "pat" && (
           <>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Create a PAT at{" "}
               <a href={`${baseUrl.trim() || GITLAB_COM}/-/user_settings/personal_access_tokens`} target="_blank" rel="noreferrer" className="text-primary underline">
                 GitLab Access Tokens

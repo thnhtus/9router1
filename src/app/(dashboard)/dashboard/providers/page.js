@@ -48,7 +48,7 @@ function getStatusDisplay(connected, error, errorCode) {
     );
   }
   if (parts.length === 0) {
-    return <span className="text-text-muted">No connections</span>;
+    return <span className="text-muted-foreground">No connections</span>;
   }
   return parts;
 }
@@ -414,7 +414,7 @@ export default function ProvidersPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+          className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-foreground outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
           aria-label="Filter providers by connection status"
         >
           {STATUS_FILTER_OPTIONS.map((option) => (
@@ -427,10 +427,10 @@ export default function ProvidersPage() {
 
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
-          <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
+          <span className="material-symbols-outlined text-[32px] text-muted-foreground mb-2">
             search_off
           </span>
-          <p className="text-text-muted text-sm">
+          <p className="text-muted-foreground text-sm">
             No providers match your search or filters
           </p>
         </div>
@@ -464,7 +464,7 @@ export default function ProvidersPage() {
         </div>
         {compatibleProviders.length === 0 &&
         anthropicCompatibleProviders.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
+          <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
             <span className="material-symbols-outlined text-[18px]">extension</span>
             <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
           </div>
@@ -503,7 +503,7 @@ export default function ProvidersPage() {
               className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
                 testingMode === "oauth"
                   ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                  : "bg-background border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
               }`}
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
@@ -548,7 +548,7 @@ export default function ProvidersPage() {
             className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
               testingMode === "free"
                 ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                : "bg-background border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
             }`}
             title="Test all Free connections"
             aria-label="Test all Free provider connections"
@@ -609,7 +609,7 @@ export default function ProvidersPage() {
             className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
               testingMode === "apikey"
                 ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                : "bg-background border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
             }`}
             title="Test all API Key connections"
             aria-label="Test all API Key connections"
@@ -683,14 +683,14 @@ export default function ProvidersPage() {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl"
+            className="relative bg-card border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-card/95 backdrop-blur-sm rounded-t-xl">
               <h3 className="font-semibold">Test Results</h3>
               <button
                 onClick={() => setTestResults(null)}
-                className="p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors"
+                className="p-1 rounded-lg hover:bg-background text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Close test results"
               >
                 <span className="material-symbols-outlined text-lg">close</span>
@@ -766,7 +766,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   <>
                     {getStatusDisplay(connected, error, errorCode)}
                     {errorTime && (
-                      <span className="text-text-muted">{errorTime}</span>
+                      <span className="text-muted-foreground">{errorTime}</span>
                     )}
                   </>
                 )}
@@ -904,7 +904,7 @@ function ApiKeyProviderCard({
                       </Badge>
                     )}
                     {errorTime && (
-                      <span className="text-text-muted">{errorTime}</span>
+                      <span className="text-muted-foreground">{errorTime}</span>
                     )}
                   </>
                 )}
@@ -982,7 +982,7 @@ function ProviderTestResultsView({ results }) {
     <div className="flex min-w-0 flex-col gap-3">
       {summary && (
         <div className="flex flex-wrap items-center gap-2 text-xs mb-1 sm:gap-3">
-          <span className="text-text-muted">{modeLabel} Test</span>
+          <span className="text-muted-foreground">{modeLabel} Test</span>
           <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">
             {summary.passed} passed
           </span>
@@ -991,7 +991,7 @@ function ProviderTestResultsView({ results }) {
               {summary.failed} failed
             </span>
           )}
-          <span className="text-text-muted sm:ml-auto">
+          <span className="text-muted-foreground sm:ml-auto">
             {summary.total} tested
           </span>
         </div>
@@ -1010,12 +1010,12 @@ function ProviderTestResultsView({ results }) {
             <span className="block truncate font-medium sm:inline">
               {r.connectionName}
             </span>
-            <span className="block truncate text-text-muted sm:ml-1.5 sm:inline">
+            <span className="block truncate text-muted-foreground sm:ml-1.5 sm:inline">
               ({r.provider})
             </span>
           </div>
           {r.latencyMs !== undefined && (
-            <span className="shrink-0 text-text-muted font-mono tabular-nums">
+            <span className="shrink-0 text-muted-foreground font-mono tabular-nums">
               {r.latencyMs}ms
             </span>
           )}
@@ -1031,7 +1031,7 @@ function ProviderTestResultsView({ results }) {
         </div>
       ))}
       {items.length === 0 && (
-        <div className="text-center py-4 text-text-muted text-sm">
+        <div className="text-center py-4 text-muted-foreground text-sm">
           No active connections found for this group.
         </div>
       )}

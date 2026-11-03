@@ -56,7 +56,7 @@ export default function PricingSettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Pricing Settings</h1>
-          <p className="text-text-muted mt-1">
+          <p className="text-muted-foreground mt-1">
             Configure pricing rates for cost tracking and calculations
           </p>
         </div>
@@ -71,7 +71,7 @@ export default function PricingSettingsPage() {
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-4">
-          <div className="text-text-muted text-sm uppercase font-semibold">
+          <div className="text-muted-foreground text-sm uppercase font-semibold">
             Total Models
           </div>
           <div className="text-2xl font-bold mt-1">
@@ -79,7 +79,7 @@ export default function PricingSettingsPage() {
           </div>
         </Card>
         <Card className="p-4">
-          <div className="text-text-muted text-sm uppercase font-semibold">
+          <div className="text-muted-foreground text-sm uppercase font-semibold">
             Providers
           </div>
           <div className="text-2xl font-bold mt-1">
@@ -87,7 +87,7 @@ export default function PricingSettingsPage() {
           </div>
         </Card>
         <Card className="p-4">
-          <div className="text-text-muted text-sm uppercase font-semibold">
+          <div className="text-muted-foreground text-sm uppercase font-semibold">
             Status
           </div>
           <div className="text-2xl font-bold mt-1 text-success">
@@ -99,7 +99,7 @@ export default function PricingSettingsPage() {
       {/* Info Section */}
       <Card className="p-6">
         <h2 className="text-xl font-semibold mb-4">How Pricing Works</h2>
-        <div className="space-y-3 text-sm text-text-muted">
+        <div className="space-y-3 text-sm text-muted-foreground">
           <p>
             <strong>Cost Calculation:</strong> Costs are calculated based on token usage and pricing rates.
             Each request&apos;s cost is determined by: (input_tokens × input_rate) + (output_tokens × output_rate) + (cached_tokens × cached_rate)
@@ -138,25 +138,25 @@ export default function PricingSettingsPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-4 text-text-muted">Loading pricing data...</div>
+          <div className="text-center py-4 text-muted-foreground">Loading pricing data...</div>
         ) : currentPricing ? (
           <div className="space-y-3">
             {Object.keys(currentPricing).slice(0, 5).map(provider => (
               <div key={provider} className="text-sm">
                 <span className="font-semibold">{provider.toUpperCase()}:</span>{" "}
-                <span className="text-text-muted">
+                <span className="text-muted-foreground">
                   {Object.keys(currentPricing[provider]).length} models
                 </span>
               </div>
             ))}
             {Object.keys(currentPricing).length > 5 && (
-              <div className="text-sm text-text-muted">
+              <div className="text-sm text-muted-foreground">
                 + {Object.keys(currentPricing).length - 5} more providers
               </div>
             )}
           </div>
         ) : (
-          <div className="text-text-muted">No pricing data available</div>
+          <div className="text-muted-foreground">No pricing data available</div>
         )}
       </Card>
 

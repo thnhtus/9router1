@@ -89,7 +89,7 @@ export default function SmartPolicyModal({
       size="lg"
     >
       <div className="flex flex-col gap-4">
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-muted-foreground">
           Choose how the System One router manages model selection across conversation turns:
         </p>
 
@@ -112,17 +112,17 @@ export default function SmartPolicyModal({
                       className={`size-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
                         isSelected
                           ? "border-primary bg-primary text-white"
-                          : "border-border-subtle bg-surface"
+                          : "border-border/60 bg-card"
                       }`}
                     >
                       {isSelected && <span className="size-1.5 rounded-full bg-white" />}
                     </span>
-                    <span className="size-5 rounded flex items-center justify-center shrink-0 text-text-muted">
+                    <span className="size-5 rounded flex items-center justify-center shrink-0 text-muted-foreground">
                       <span className="material-symbols-outlined text-[15px] leading-none select-none inline-block">
                         {p.icon}
                       </span>
                     </span>
-                    <span className="text-sm font-medium text-text-main">
+                    <span className="text-sm font-medium text-foreground">
                       {p.title}
                     </span>
                     {p.recommended && (
@@ -136,7 +136,7 @@ export default function SmartPolicyModal({
                   </Badge>
                 </div>
 
-                <p className="text-xs text-text-muted mt-1.5 pl-6 leading-relaxed">
+                <p className="text-xs text-muted-foreground mt-1.5 pl-6 leading-relaxed">
                   {p.desc}
                 </p>
 
@@ -147,7 +147,7 @@ export default function SmartPolicyModal({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-text-muted">Switch Confidence Threshold:</span>
+                      <span className="font-medium text-muted-foreground">Switch Confidence Threshold:</span>
                       <span className="font-mono font-semibold text-primary text-sm">{threshold}%</span>
                     </div>
 
@@ -162,7 +162,7 @@ export default function SmartPolicyModal({
                     />
 
                     <div className="flex items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-text-muted mr-1">Presets:</span>
+                      <span className="text-[10px] text-muted-foreground mr-1">Presets:</span>
                       {QUICK_THRESHOLDS.map((pct) => (
                         <button
                           key={pct}
@@ -171,7 +171,7 @@ export default function SmartPolicyModal({
                           className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
                             threshold === pct
                               ? "bg-primary text-white font-semibold"
-                              : "bg-black/5 dark:bg-white/5 text-text-muted hover:text-text-main"
+                              : "bg-black/5 dark:bg-white/5 text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           {pct}%
@@ -190,10 +190,10 @@ export default function SmartPolicyModal({
           <span className="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">
             bolt
           </span>
-          <div className="text-text-muted leading-relaxed">
-            <span className="font-medium text-text-main">Prompt Cache Benefits: </span>
+          <div className="text-muted-foreground leading-relaxed">
+            <span className="font-medium text-foreground">Prompt Cache Benefits: </span>
             Retaining the same model across session turns keeps upstream prompt caches warm,
-            reducing input token costs by up to <strong className="text-text-main">90%</strong> and
+            reducing input token costs by up to <strong className="text-foreground">90%</strong> and
             cutting latency in half (Claude Prompt Cache, DeepSeek KV-cache, Gemini Implicit Cache).
           </div>
         </div>

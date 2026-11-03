@@ -118,7 +118,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               </span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Initializing...</h3>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Setting up {providerName} authentication
             </p>
           </div>
@@ -144,7 +144,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
 
               <div>
                 <p className="text-sm font-medium mb-2">Step 2: Paste the callback URL here</p>
-                <p className="text-xs text-text-muted mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   After authorization, copy the full URL from your browser address bar.
                 </p>
                 <Input
@@ -174,7 +174,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
-            <p className="text-sm text-text-muted mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Your Kiro account via {providerName} has been connected.
             </p>
             <Button onClick={onClose} fullWidth>

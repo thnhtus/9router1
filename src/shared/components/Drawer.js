@@ -49,25 +49,25 @@ export default function Drawer({
 
       {/* Drawer panel */}
       <div className={cn(
-        "absolute right-0 top-0 h-full bg-surface flex flex-col",
+        "absolute right-0 top-0 h-full bg-card flex flex-col",
         "shadow-[var(--shadow-elev)]",
         "slide-in-right",
-        "border-l border-border-subtle",
+        "border-l border-border/60",
         widths[width] || widths.md,
         className
       )}>
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border-subtle flex-shrink-0">
+        <div className="flex items-center justify-between p-6 border-b border-border/60 flex-shrink-0">
           <div className="flex items-center gap-3">
             {title && (
-              <h2 className="text-lg font-semibold text-text-main">{title}</h2>
+              <h2 className="text-lg font-semibold text-foreground">{title}</h2>
             )}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+            className="p-1.5 rounded-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>

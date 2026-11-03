@@ -342,7 +342,7 @@ export default function ZedAuthModal({ isOpen, providerInfo, onSuccess, onClose 
 
             <div className="flex items-center gap-3 my-1">
               <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-text-muted uppercase tracking-wider">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">
                 Or paste callback URL manually
               </span>
               <div className="flex-1 h-px bg-border" />
@@ -370,7 +370,7 @@ export default function ZedAuthModal({ isOpen, providerInfo, onSuccess, onClose 
 
               <div>
                 <p className="text-sm font-medium mb-2">Step 2: Paste the callback URL here</p>
-                <p className="text-xs text-text-muted mb-2">
+                <p className="text-xs text-muted-foreground mb-2">
                   After authorization, copy the full URL from your browser (or the local callback page).
                 </p>
                 <Input

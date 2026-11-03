@@ -100,7 +100,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
               </span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Auto-detecting tokens...</h3>
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted-foreground">
               Reading from Cursor IDE database
             </p>
           </div>

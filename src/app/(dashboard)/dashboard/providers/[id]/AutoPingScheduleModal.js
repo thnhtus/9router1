@@ -87,11 +87,11 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-text-muted">
+        <p className="text-sm text-muted-foreground">
           Configure automated quota pings{connection?.name ? ` for ${connection.name}` : ""} — pick one mode.
         </p>
 
-        <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-surface-2 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-muted p-1">
           {MODE_OPTIONS.map((option) => {
             const isSelected = form.mode === option.value;
             return (
@@ -102,8 +102,8 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
                 className={cn(
                   "flex h-9 items-center justify-center gap-1.5 rounded-[8px] px-3 text-sm font-medium transition-all",
                   isSelected
-                    ? "bg-surface text-text-main shadow-sm"
-                    : "text-text-muted hover:text-text-main"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <span className="material-symbols-outlined text-[15px] leading-none">
@@ -116,14 +116,14 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
         </div>
 
         {form.mode === "reset" && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             Pings right after the 5h quota window resets, so a new window starts immediately.
           </p>
         )}
 
         {form.mode === "schedule" && (
           <div className="flex flex-col gap-4">
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted-foreground">
               Pings at fixed local times so the 5h windows align with your workday.
             </p>
 
@@ -162,12 +162,12 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
             </div>
 
             {previewSlots.length > 0 && (
-              <div className="rounded-[10px] bg-surface-2 px-3 py-2.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
+              <div className="rounded-[10px] bg-muted px-3 py-2.5">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Daily slots ({form.timezone})
                 </p>
-                <p className="mt-1 text-sm font-medium text-text-main">{previewSlots.join("  →  ")}</p>
-                <p className="mt-1 text-xs text-text-muted">
+                <p className="mt-1 text-sm font-medium text-foreground">{previewSlots.join("  →  ")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Covers {previewSlots[0]} – {coverageEnd}, then pauses until {previewSlots[0]} next day.
                 </p>
               </div>

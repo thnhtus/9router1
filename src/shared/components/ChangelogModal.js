@@ -55,14 +55,14 @@ export default function ChangelogModal({ isOpen, onClose }) {
       {/* Modal content */}
       <div
         ref={modalRef}
-        className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
+        className="relative w-full bg-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
-          <h2 className="text-lg font-semibold text-text-main">Change Log</h2>
+          <h2 className="text-lg font-semibold text-foreground">Change Log</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             aria-label="Close"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
@@ -72,7 +72,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-1">
           {loading && (
-            <div className="flex items-center justify-center py-10 text-text-muted">
+            <div className="flex items-center justify-center py-10 text-muted-foreground">
               <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
               Loading...
             </div>
@@ -82,7 +82,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
           )}
           {!loading && !error && html && (
             <div
-              className="changelog-body text-text-main"
+              className="changelog-body text-foreground"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           )}

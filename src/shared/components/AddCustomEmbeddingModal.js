@@ -95,7 +95,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
       return (
         <>
           <Badge variant="success">Valid</Badge>
-          {dimensions && <span className="text-sm text-text-muted">{dimensions} dims</span>}
+          {dimensions && <span className="text-sm text-muted-foreground">{dimensions} dims</span>}
         </>
       );
     }

@@ -42,16 +42,16 @@ export default function DonateModal({ isOpen, onClose }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={modalRef}
-        className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
+        className="relative w-full bg-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
       >
         <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
-          <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
             {data?.title || "Support 9Router"}
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             aria-label="Close"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
@@ -60,7 +60,7 @@ export default function DonateModal({ isOpen, onClose }) {
 
         <div className="p-6 overflow-y-auto flex-1">
           {loading && (
-            <div className="flex items-center justify-center py-10 text-text-muted">
+            <div className="flex items-center justify-center py-10 text-muted-foreground">
               <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
               Loading...
             </div>
@@ -71,7 +71,7 @@ export default function DonateModal({ isOpen, onClose }) {
           {!loading && !error && data && (
             <>
               {data.message && (
-                <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
+                <p className="text-muted-foreground text-sm mb-6 text-center">{data.message}</p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {data.channels?.map((ch) => (
@@ -97,9 +97,9 @@ function DonateChannelCard({ channel }) {
       >
         <span className="material-symbols-outlined text-[26px]">{icon}</span>
       </div>
-      <div className="font-semibold text-text-main mb-1">{label}</div>
+      <div className="font-semibold text-foreground mb-1">{label}</div>
       {description && (
-        <div className="text-xs text-text-muted mb-3 text-center">{description}</div>
+        <div className="text-xs text-muted-foreground mb-3 text-center">{description}</div>
       )}
       {qr && (
         <img
@@ -114,7 +114,7 @@ function DonateChannelCard({ channel }) {
   );
 
   return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
+    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-card/50 hover:border-pink-500/40 transition-colors">
       {content}
       {url && (
         <a

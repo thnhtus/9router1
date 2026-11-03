@@ -75,7 +75,7 @@ export default function ProviderLimitCard({
           </div>
 
           <div>
-            <h3 className="font-semibold text-text-primary">
+            <h3 className="font-semibold text-foreground">
               {name || provider}
             </h3>
             {plan && (
@@ -97,7 +97,7 @@ export default function ProviderLimitCard({
           title="Refresh quota"
         >
           <span
-            className={`material-symbols-outlined text-[20px] text-text-muted ${
+            className={`material-symbols-outlined text-[20px] text-muted-foreground ${
               refreshing || loading ? "animate-spin" : ""
             }`}
           >
@@ -175,7 +175,7 @@ export default function ProviderLimitCard({
 
       {/* Empty State */}
       {!loading && !error && !message && quotas?.length === 0 && (
-        <div className="text-center py-8 text-text-muted">
+        <div className="text-center py-8 text-muted-foreground">
           <span className="material-symbols-outlined text-[48px] opacity-20">
             data_usage
           </span>

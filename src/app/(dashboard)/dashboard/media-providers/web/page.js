@@ -26,7 +26,7 @@ function ProviderCard({ provider, kind, connections }) {
   const renderStatus = () => {
     if (isNoAuth) return <Badge variant="success" size="sm">Ready</Badge>;
     if (allDisabled) return <Badge variant="default" size="sm">Disabled</Badge>;
-    if (total === 0) return <span className="text-xs text-text-muted">No connections</span>;
+    if (total === 0) return <span className="text-xs text-muted-foreground">No connections</span>;
     return (
       <>
         {connected > 0 && <Badge variant="success" size="sm" dot>{connected} Connected</Badge>}
@@ -65,7 +65,7 @@ function ProviderCard({ provider, kind, connections }) {
 
 function ComboList({ combos }) {
   if (combos.length === 0) {
-    return <p className="text-xs text-text-muted italic">No combos yet.</p>;
+    return <p className="text-xs text-muted-foreground italic">No combos yet.</p>;
   }
   return (
     <div className="flex flex-col gap-2">
@@ -94,11 +94,11 @@ function ComboList({ combos }) {
                   );
                 })}
                 {combo.models.length > 6 && (
-                  <span className="text-[10px] text-text-muted ml-1">+{combo.models.length - 6}</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">+{combo.models.length - 6}</span>
                 )}
               </div>
-              <span className="text-[11px] text-text-muted shrink-0">{combo.models.length}</span>
-              <span className="material-symbols-outlined text-text-muted text-[16px]">chevron_right</span>
+              <span className="text-[11px] text-muted-foreground shrink-0">{combo.models.length}</span>
+              <span className="material-symbols-outlined text-muted-foreground text-[16px]">chevron_right</span>
             </div>
           </Card>
         </Link>
@@ -115,7 +115,7 @@ function Section({ title, icon, kind, providers, connections, combos, onCreateCo
         <div className="flex flex-wrap items-center gap-2">
           <span className="material-symbols-outlined text-primary">{icon}</span>
           <h2 className="text-base font-semibold">{title}</h2>
-          <span className="text-xs text-text-muted">({providers.length} providers · {combos.length} combos)</span>
+          <span className="text-xs text-muted-foreground">({providers.length} providers · {combos.length} combos)</span>
         </div>
         <Button size="sm" icon="add" onClick={onCreateCombo}>Create Combo</Button>
       </div>
@@ -129,7 +129,7 @@ function Section({ title, icon, kind, providers, connections, combos, onCreateCo
 
       {/* Providers grid — bottom */}
       {providers.length === 0 ? (
-        <div className="text-center py-8 border border-dashed border-border rounded-xl text-text-muted text-sm">
+        <div className="text-center py-8 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
           No providers.
         </div>
       ) : (

@@ -38,7 +38,7 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
   const renderStatus = () => {
     if (isNoAuth) return <Badge variant="success" size="sm">Ready</Badge>;
     if (allDisabled) return <Badge variant="default" size="sm">Disabled</Badge>;
-    if (total === 0) return <span className="text-xs text-text-muted">No connections</span>;
+    if (total === 0) return <span className="text-xs text-muted-foreground">No connections</span>;
     return (
       <>
         {connected > 0 && <Badge variant="success" size="sm" dot>{connected} Connected</Badge>}
@@ -124,11 +124,11 @@ function ComboList({ combos }) {
                   );
                 })}
                 {combo.models.length > 6 && (
-                  <span className="text-[10px] text-text-muted ml-1">+{combo.models.length - 6}</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">+{combo.models.length - 6}</span>
                 )}
               </div>
-              <span className="text-[11px] text-text-muted shrink-0">{combo.models.length}</span>
-              <span className="material-symbols-outlined text-text-muted text-[16px]">chevron_right</span>
+              <span className="text-[11px] text-muted-foreground shrink-0">{combo.models.length}</span>
+              <span className="material-symbols-outlined text-muted-foreground text-[16px]">chevron_right</span>
             </div>
           </Card>
         </Link>
@@ -247,7 +247,7 @@ export default function MediaProviderKindPage() {
       )}
 
       {allProviders.length === 0 ? (
-        <div className="text-center py-12 border border-dashed border-border rounded-xl text-text-muted text-sm">
+        <div className="text-center py-12 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
           No providers support <strong>{kindConfig.label}</strong> yet.
         </div>
       ) : (

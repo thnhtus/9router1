@@ -1,11 +1,2 @@
-// Utility function to merge class names
-// Handles conditional classes and removes duplicates
-
-export function cn(...classes) {
-  return classes
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
+// clsx + tailwind-merge semantics so className overrides win over component defaults
+export { cn } from "cn";

@@ -222,13 +222,13 @@ export default function TranslatorPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
-          <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
+          <h1 className="text-2xl font-bold text-foreground">Translator Debug</h1>
+          <p className="text-sm text-muted-foreground mt-1">Replay request flow — matches log files</p>
         </div>
         {meta && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
-            <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+            <span className="material-symbols-outlined text-muted-foreground text-[14px]">arrow_forward</span>
             <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
             <MetaBadge label="provider" value={meta.provider} color="green" />
             <MetaBadge label="model" value={meta.model} color="purple" />
@@ -247,12 +247,12 @@ export default function TranslatorPage() {
               {/* Step header */}
               <div className="flex items-center justify-between">
                 <button onClick={() => toggle(step.id)} className="flex items-center gap-2 flex-1 text-left group">
-                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
+                  <span className="material-symbols-outlined text-[20px] text-muted-foreground group-hover:text-primary transition-colors">
                     {isExpanded ? "expand_more" : "chevron_right"}
                   </span>
-                  <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
-                  <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
-                  <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
+                  <span className="text-xs font-mono text-muted-foreground/60 w-4">{step.id}</span>
+                  <h3 className="text-sm font-semibold text-foreground">{step.label}</h3>
+                  <span className="text-xs text-muted-foreground/60 font-mono">{step.file}</span>
                   {content && <span className="text-xs text-green-500">({content.length} chars)</span>}
                 </button>
                 {!isExpanded && (
@@ -304,7 +304,7 @@ function MetaBadge({ label, value, color }) {
   };
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono ${colors[color]}`}>
-      <span className="text-text-muted/70 font-sans text-[10px]">{label}:</span>{value}
+      <span className="text-muted-foreground/70 font-sans text-[10px]">{label}:</span>{value}
     </span>
   );
 }

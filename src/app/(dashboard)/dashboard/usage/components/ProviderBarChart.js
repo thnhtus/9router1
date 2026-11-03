@@ -43,17 +43,17 @@ export default function ProviderBarChart({ byProvider }) {
   return (
     <Card className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-text-muted uppercase tracking-wide">By Provider</span>
-        <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1">
+        <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">By Provider</span>
+        <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-muted p-1">
           <button
             onClick={() => setViewMode("tokens")}
-            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
           >
             Tokens
           </button>
           <button
             onClick={() => setViewMode("requests")}
-            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${viewMode === "requests" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${viewMode === "requests" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
           >
             Requests
           </button>
@@ -61,7 +61,7 @@ export default function ProviderBarChart({ byProvider }) {
       </div>
 
       {!chartData.length ? (
-        <div className="h-44 flex items-center justify-center text-text-muted text-sm">No provider usage yet</div>
+        <div className="h-44 flex items-center justify-center text-muted-foreground text-sm">No provider usage yet</div>
       ) : (
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>

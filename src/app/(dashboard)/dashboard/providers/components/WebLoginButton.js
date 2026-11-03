@@ -187,7 +187,7 @@ export default function WebLoginButton({ providerId, onConnected, size = "sm" })
 
       <Modal isOpen={open} onClose={handleClose} title={translate("Login via Browser")} size="sm">
         <div className="flex flex-col gap-4">
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             {translate(
               "A Chrome window opens on a shared browser profile. Log in there — the session is captured automatically. One Google login in a profile makes every other provider a single “Continue with Google” click."
             )}
@@ -195,7 +195,7 @@ export default function WebLoginButton({ providerId, onConnected, size = "sm" })
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium uppercase tracking-wide text-text-muted">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {translate("Browser profile")}
               </span>
               <button
@@ -217,11 +217,11 @@ export default function WebLoginButton({ providerId, onConnected, size = "sm" })
                     type="button"
                     disabled={busy}
                     onClick={() => pickProfile(name)}
-                    className={`flex items-center gap-2 rounded border border-accent/30 bg-sidebar p-2 text-left text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 ${
-                      selected ? "border-primary ring-1 ring-primary" : "hover:border-accent/60"
+                    className={`flex items-center gap-2 rounded border border-primary/30 bg-sidebar p-2 text-left text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 ${
+                      selected ? "border-primary ring-1 ring-primary" : "hover:border-primary/60"
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px] text-text-muted">{profileIcon(name)}</span>
+                    <span className="material-symbols-outlined text-[18px] text-muted-foreground">{profileIcon(name)}</span>
                     <span className="min-w-0 flex-1 truncate">{name}</span>
                     {selected && (
                       <span className="material-symbols-outlined text-[16px] text-primary">check_circle</span>
@@ -233,7 +233,7 @@ export default function WebLoginButton({ providerId, onConnected, size = "sm" })
           </div>
 
           {phase !== "idle" && (
-            <div className="rounded border border-accent/20 bg-sidebar/50 p-3">
+            <div className="rounded border border-primary/20 bg-sidebar/50 p-3">
               {phase === "success" ? (
                 <div className="flex items-center gap-2 text-sm font-medium text-green-400">
                   <span className="material-symbols-outlined text-[18px]">check_circle</span>
@@ -256,7 +256,7 @@ export default function WebLoginButton({ providerId, onConnected, size = "sm" })
                       <li
                         key={stage.key}
                         className={`flex items-center gap-2 text-sm ${
-                          done ? "text-green-400" : active ? "text-primary" : "text-text-muted opacity-50"
+                          done ? "text-green-400" : active ? "text-primary" : "text-muted-foreground opacity-50"
                         }`}
                       >
                         <span className={`material-symbols-outlined text-[18px] ${active ? "animate-pulse" : ""}`}>
@@ -266,7 +266,7 @@ export default function WebLoginButton({ providerId, onConnected, size = "sm" })
                       </li>
                     );
                   })}
-                  {message && <li className="pl-6 text-xs text-text-muted">{message}</li>}
+                  {message && <li className="pl-6 text-xs text-muted-foreground">{message}</li>}
                 </ol>
               )}
             </div>

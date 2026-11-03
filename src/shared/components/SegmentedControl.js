@@ -1,48 +1,29 @@
 "use client";
 
-import { cn } from "@/shared/utils/cn";
+import { cn } from "cn";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-export default function SegmentedControl({
-  options = [],
-  value,
-  onChange,
-  size = "md",
-  className,
-}) {
-  const sizes = {
-    sm: "h-7 text-xs",
-    md: "h-9 text-sm",
-    lg: "h-11 text-base",
-  };
+const sizes = { sm: "sm", md: "default", lg: "lg" };
 
+export default function SegmentedControl({ options = [], value, onChange, size = "md", className }) {
   return (
-    <div
-      className={cn(
-        "inline-flex items-center p-1 rounded-[10px] overflow-x-auto",
-        "bg-surface-2",
-        className
-      )}
+    <ToggleGroup
+      value={[value]}
+      onValueChange={(v) => v[0] !== undefined && onChange(v[0])}
+      size={sizes[size]}
+      spacing={0}
+      className={cn("max-w-full gap-1 overflow-x-auto rounded-xl border border-black/[0.06] bg-white p-1 shadow-soft dark:border-white/[0.07] dark:bg-white/[0.03]", className)}
     >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "shrink-0 px-4 rounded-[8px] font-medium transition-all",
-            sizes[size],
-            value === option.value
-              ? "bg-surface text-text-main shadow-sm"
-              : "text-text-muted hover:text-text-main"
-          )}
+      {options.map((o) => (
+        <ToggleGroupItem
+          key={o.value}
+          value={o.value}
+          className="rounded-[7px]! border-0 px-3.5 font-medium text-foreground/40 hover:text-foreground/70 data-pressed:bg-black/[0.06] data-pressed:text-foreground dark:data-pressed:bg-white/[0.08]"
         >
-          {option.icon && (
-            <span className="material-symbols-outlined text-[16px] mr-1.5">
-              {option.icon}
-            </span>
-          )}
-          {option.label}
-        </button>
+          {o.icon && <span className="material-symbols-outlined text-[16px]">{o.icon}</span>}
+          {o.label}
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }

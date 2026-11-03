@@ -218,7 +218,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         />
         {isOAuth && connection.email && (
           <div className="bg-sidebar/50 p-3 rounded-lg">
-            <p className="text-sm text-text-muted mb-1">Email</p>
+            <p className="text-sm text-muted-foreground mb-1">Email</p>
             <p className="font-medium">{connection.email}</p>
           </div>
         )}
@@ -256,7 +256,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         {isAzure && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-primary/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
             <div className="flex flex-col gap-3">
               <Input
@@ -292,7 +292,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         {usesAwsCredentialForm && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-primary/20">
             <h3 className="font-semibold mb-3 text-sm">AWS Bedrock Credentials</h3>
             <div className="flex flex-col gap-3">
               <Input
@@ -323,7 +323,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 hint="Leave blank to keep the saved token. Enter a new token to replace it."
                 disabled={clearAwsSessionToken}
               />
-              <label className="flex items-center gap-2 text-sm text-text-muted">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={clearAwsSessionToken}
