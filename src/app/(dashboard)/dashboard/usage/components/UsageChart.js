@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import SegmentedControl from "@/shared/components/SegmentedControl";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -63,20 +64,7 @@ export default function UsageChart({ period = "7d" }) {
 
   return (
     <Card className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
-      <div
-        className="grid w-full items-center gap-1 rounded-lg border border-border bg-muted p-1 sm:w-auto sm:self-start"
-        style={{ gridTemplateColumns: `repeat(${VIEW_MODES.length}, minmax(0, 1fr))` }}
-      >
-        {VIEW_MODES.map((m) => (
-          <button
-            key={m.value}
-            onClick={() => setViewMode(m.value)}
-            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === m.value ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl className="self-start" value={viewMode} onChange={setViewMode} options={VIEW_MODES} />
 
       {loading ? (
         <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">Loading...</div>

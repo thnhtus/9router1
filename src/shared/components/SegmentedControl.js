@@ -5,13 +5,14 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const sizes = { sm: "sm", md: "default", lg: "lg" };
 
-export default function SegmentedControl({ options = [], value, onChange, size = "md", className }) {
+export default function SegmentedControl({ options = [], value, onChange, size = "md", className, disabled }) {
   return (
     <ToggleGroup
       value={[value]}
       onValueChange={(v) => v[0] !== undefined && onChange(v[0])}
       size={sizes[size]}
       spacing={0}
+      disabled={disabled}
       className={cn("max-w-full gap-1 overflow-x-auto rounded-xl border border-black/[0.06] bg-white p-1 shadow-soft dark:border-white/[0.07] dark:bg-white/[0.03]", className)}
     >
       {options.map((o) => (

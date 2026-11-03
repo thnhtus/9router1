@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, Button } from "@/shared/components";
+import SegmentedControl from "@/shared/components/SegmentedControl";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(2)}M`;
@@ -135,21 +136,7 @@ export default function PxpipeClient() {
       <Card className="p-4">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <h3 className="font-medium">Token savings (estimated)</h3>
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
-            {WINDOW_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setWindowId(tab.id)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  windowId === tab.id
-                    ? "bg-primary text-white shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl size="sm" value={windowId} onChange={setWindowId} options={WINDOW_TABS.map((t) => ({ value: t.id, label: t.label }))} />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div>

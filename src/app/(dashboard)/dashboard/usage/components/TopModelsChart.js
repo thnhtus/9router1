@@ -13,6 +13,7 @@ import {
   Cell,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import SegmentedControl from "@/shared/components/SegmentedControl";
 
 const COLORS = ["#6366f1", "#14b8a6", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -47,20 +48,7 @@ export default function TopModelsChart({ byModel }) {
     <Card className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Top Models</span>
-        <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-muted p-1">
-          <button
-            onClick={() => setViewMode("tokens")}
-            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
-          >
-            Tokens
-          </button>
-          <button
-            onClick={() => setViewMode("requests")}
-            className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors ${viewMode === "requests" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
-          >
-            Requests
-          </button>
-        </div>
+        <SegmentedControl size="sm" value={viewMode} onChange={setViewMode} options={[{ value: "tokens", label: "Tokens" }, { value: "requests", label: "Requests" }]} />
       </div>
 
       {!chartData.length ? (
