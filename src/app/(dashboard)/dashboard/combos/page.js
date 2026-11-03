@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -10,6 +11,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { resolveProviderId, AI_PROVIDERS } from "@/shared/constants/providers";
+import FallbackChainCard from "./FallbackChainCard";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -75,6 +77,7 @@ export default function CombosPage() {
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
+  const [smartAutoPool, setSmartAutoPool] = useState({ enabled: false, models: [] });
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const [presetLoading, setPresetLoading] = useState(null); // "cursor" | "claude" | null
@@ -205,6 +208,8 @@ export default function CombosPage() {
         normalized[cap.key] = normalizeCapEntry(rawAdapter[cap.key]);
       }
       setCapacityAdapter(normalized);
+      const rawPool = settingsData.smartAutoPool || {};
+      setSmartAutoPool({ enabled: !!rawPool.enabled, models: Array.isArray(rawPool.models) ? rawPool.models : [] });
       setLoadError(!combosRes.ok || !providersRes.ok);
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -224,6 +229,19 @@ export default function CombosPage() {
       });
     } catch (error) {
       console.log("Error updating capacity adapter:", error);
+    }
+  };
+
+  const handleSetSmartAutoPool = async (next) => {
+    setSmartAutoPool(next);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smartAutoPool: next }),
+      });
+    } catch (error) {
+      console.log("Error updating smart auto pool:", error);
     }
   };
 
@@ -465,6 +483,8 @@ export default function CombosPage() {
         </div>
       </div>
 
+      {combos.length > 0 && <FallbackChainCard />}
+
       {/* Combos List */}
       {combos.length === 0 ? (
         <Card>
@@ -582,6 +602,13 @@ export default function CombosPage() {
           </div>
         </div>
       )}
+
+      <SmartAutoPoolSection
+        pool={smartAutoPool}
+        onChange={handleSetSmartAutoPool}
+        activeProviders={activeProviders}
+        getCaps={getCaps}
+      />
 
       {/* Capacity Adapter */}
       <CapacityAdapterSection
@@ -875,6 +902,73 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
         />
       )}
     </Card>
+  );
+}
+
+// Extra models Jev may pick for Smart Router combos even though they aren't combo
+// members — lets it route cheap tasks to connected cheaper/free models.
+function SmartAutoPoolSection({ pool, onChange, activeProviders, getCaps }) {
+  const [showModelSelect, setShowModelSelect] = useState(false);
+  const { enabled, models } = pool;
+  const add = (m) => {
+    const v = m?.value || m?.name || m;
+    if (v && !models.includes(v)) onChange({ ...pool, models: [...models, v] });
+  };
+  const remove = (m) => {
+    const v = m?.value || m?.name || m;
+    onChange({ ...pool, models: models.filter((x) => x !== v) });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">Smart Router Cost Pool</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Smart combos may also route to these models when Jev finds a cheaper fit. Combo members stay the default order.
+        </p>
+      </div>
+      <Card padding="sm" className={!enabled ? "opacity-60" : ""}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2.5">
+            <Toggle checked={enabled} onChange={(v) => onChange({ ...pool, enabled: v })} aria-label="Enable Smart Router cost pool" />
+            <span className="text-sm">{models.length} model{models.length === 1 ? "" : "s"} in pool</span>
+          </div>
+          <Button icon="add" variant="ghost" size="sm" onClick={() => setShowModelSelect(true)}>
+            Add Model
+          </Button>
+        </div>
+        {models.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {models.map((m) => (
+              <code key={m} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs dark:bg-white/5">
+                <span>{m}</span>
+                <CapacityBadges caps={getCaps?.(m)} />
+                <button
+                  type="button"
+                  onClick={() => remove(m)}
+                  className="rounded text-muted-foreground hover:text-red-500"
+                  aria-label={`Remove ${m}`}
+                >
+                  <span className="material-symbols-outlined text-[14px] leading-none">close</span>
+                </button>
+              </code>
+            ))}
+          </div>
+        )}
+      </Card>
+      {showModelSelect && (
+        <ModelSelectModal
+          isOpen={showModelSelect}
+          onClose={() => setShowModelSelect(false)}
+          onSelect={add}
+          onDeselect={remove}
+          activeProviders={activeProviders}
+          title="Add Cost Pool Model"
+          addedModelValues={models}
+          closeOnSelect={false}
+        />
+      )}
+    </div>
   );
 }
 

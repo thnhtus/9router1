@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { parseModel } from "./model.js";
+import { startComboTrace } from "./comboTrace.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
 import {
@@ -393,15 +394,14 @@ export async function handleComboChat({
     const isStrict = policy === "strict";
 
     let switchThreshold = 0.7;
-    if (policy === "custom") {
-      const custom = Number(confidenceThreshold);
-      if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
-    } else if (policy === "smart-switch-70") switchThreshold = 0.7;
-    else if (policy === "smart-switch-90") switchThreshold = 0.9;
-    else if (policy.startsWith("smart-switch") || policy === "smart") {
+    if (policy === "smart-switch-90") switchThreshold = 0.9;
+    else if (policy === "custom" || policy.startsWith("smart-switch") || policy === "smart") {
       const custom = Number(confidenceThreshold);
       if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
     }
+
+    // Single exit point for "stay on this model": pins it first, keeps the rest in order.
+    const pin = (model) => [model, ...models.filter((m) => m !== model)];
 
     if (!isPerTurn && sessionId) {
       activeStickyModel = getStickyComboModel(comboName, sessionId, models);
@@ -418,63 +418,52 @@ export async function handleComboChat({
       log.info("COMBO", `smart-router late decision → ${r.choice} for next turn (confidence: ${r.confidence})`);
     };
 
-    if (activeStickyModel) {
-      if (isStrict) {
-        // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
-        rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
-        log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
-      } else if (typeof resolveSmartChoice === "function") {
-        // Smart Switch (Adaptive): check if the user's task drastically shifted
-        try {
-          const smartResult = await raceSmartChoice(resolveSmartChoice(body, models), onLate, smartWaitMs);
-          const newChoice = smartResult?.choice;
-          const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
-          const sameTier = (smartResult?.peers || []).includes(activeStickyModel);
-
-          if (newChoice && newChoice !== activeStickyModel && !sameTier && models.includes(newChoice) && conf !== null && conf >= switchThreshold) {
-            // Task changed with high confidence: switch model and update session
-            rotatedModels = orderModelsByChoice(models, smartResult);
-            log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${newChoice} (confidence: ${conf} >= ${switchThreshold})`);
-            if (sessionId) {
-              setStickyComboModel(comboName, sessionId, newChoice);
-              activeStickyModel = newChoice;
-            }
-          } else {
-            // Stay on current model to preserve warm prompt cache
-            rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
-            log.info("COMBO", `smart-router [smart-switch] retained prompt cache model "${activeStickyModel}"`);
-          }
-        } catch (err) {
-          // Fail open to active sticky model
-          rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
-          log.warn("COMBO", `smart-router error, retained model "${activeStickyModel}"`, { error: err?.message || String(err) });
-        }
-      } else {
-        rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
-      }
+    if (activeStickyModel && isStrict) {
+      // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
+      rotatedModels = pin(activeStickyModel);
+      log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
     } else if (typeof resolveSmartChoice === "function") {
-      // Turn 1 or per-turn: evaluate System One to select initial model
       try {
         const smartResult = await raceSmartChoice(resolveSmartChoice(body, models), onLate, smartWaitMs);
+        const choice = smartResult?.choice;
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
+        const sameTier = activeStickyModel && (smartResult?.peers || []).includes(activeStickyModel);
+        const valid = choice && models.includes(choice);
+        const confident = conf !== null && conf >= switchThreshold;
 
-        if (smartResult?.choice && models.includes(smartResult.choice)) {
-          if (switchThreshold > 0 && conf !== null && conf < switchThreshold) {
-            log.info("COMBO", `smart-router confidence (${conf}) below threshold (${switchThreshold}), fallback to order: [${models.join(", ")}]`);
-          } else {
+        if (activeStickyModel) {
+          // Smart Switch (Adaptive): only move off the sticky model when Jev is confident
+          // the task changed to a different tier; otherwise keep the warm prompt cache.
+          if (valid && confident && choice !== activeStickyModel && !sameTier) {
             rotatedModels = orderModelsByChoice(models, smartResult);
-            log.info("COMBO", `smart-router selected ${smartResult.choice} (confidence: ${conf ?? "N/A"})`);
-            if (!isPerTurn && sessionId) {
-              setStickyComboModel(comboName, sessionId, smartResult.choice);
-              activeStickyModel = smartResult.choice;
-            }
+            log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${choice} (confidence: ${conf} >= ${switchThreshold})`);
+            setStickyComboModel(comboName, sessionId, choice);
+            activeStickyModel = choice;
+          } else {
+            rotatedModels = pin(activeStickyModel);
+            log.info("COMBO", `smart-router [smart-switch] retained prompt cache model "${activeStickyModel}"`);
+          }
+        } else if (valid && (conf === null || confident)) {
+          // No confidence reported = accept the choice (first pick has no cache to protect).
+          // Turn 1 or per-turn: evaluate System One to select initial model
+          rotatedModels = orderModelsByChoice(models, smartResult);
+          log.info("COMBO", `smart-router selected ${choice} (confidence: ${conf ?? "N/A"})`);
+          if (!isPerTurn && sessionId) {
+            setStickyComboModel(comboName, sessionId, choice);
+            activeStickyModel = choice;
           }
         } else {
-          log.info("COMBO", `smart-router no decision, fallback to order: [${models.join(", ")}]`);
+          log.info("COMBO", choice
+            ? `smart-router confidence (${conf}) below threshold (${switchThreshold}), fallback to order: [${models.join(", ")}]`
+            : `smart-router no decision, fallback to order: [${models.join(", ")}]`);
         }
       } catch (err) {
-        log.warn("COMBO", `smart-router error, fallback to order: [${models.join(", ")}]`, { error: err?.message || String(err) });
+        // Fail open: stay on the sticky model if we have one, else default order.
+        if (activeStickyModel) rotatedModels = pin(activeStickyModel);
+        log.warn("COMBO", `smart-router error, ${activeStickyModel ? `retained model "${activeStickyModel}"` : `fallback to order: [${models.join(", ")}]`}`, { error: err?.message || String(err) });
       }
+    } else if (activeStickyModel) {
+      rotatedModels = pin(activeStickyModel);
     }
   } else {
     // Apply rotation strategy if enabled
@@ -497,13 +486,15 @@ export async function handleComboChat({
   let earliestRetryAfter = null;
   let lastStatus = null;
   let requestScopedResult = null;
+  const trace = startComboTrace(comboName, comboStrategy, rotatedModels);
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+    trace.trying(i);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await trace.run(i, () => handleSingleModel(body, modelStr));
       
       // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
       // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
@@ -519,6 +510,7 @@ export async function handleComboChat({
           // longer be streamed. Returning `result` would hand the client a locked, unreadable
           // body. Degrade to a clean, valid (empty) SSE stream instead.
           log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
+          trace.finish(i, 200, "empty-peek error");
           return new Response("data: [DONE]\n\n", {
             status: 200,
             headers: { "Content-Type": "text/event-stream" },
@@ -541,6 +533,7 @@ export async function handleComboChat({
                   }
                   lastError = "Zero usable content";
                   lastStatus = 200;
+                  trace.failed(i, 200, lastError);
                   continue;
                 }
               } catch {
@@ -550,11 +543,13 @@ export async function handleComboChat({
           }
 
           log.info("COMBO", `Model ${modelStr} succeeded`);
+          trace.answered(i);
           return result;
         }
 
         if (peeked.outcome === "content") {
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          trace.answered(i);
           return peeked.response;
         }
 
@@ -565,6 +560,7 @@ export async function handleComboChat({
         const isLast = i === rotatedModels.length - 1;
         if (isNoRetryFinish(peeked.finishReason) || isLast) {
           log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
+          trace.finish(i, 200, `empty (${reasonLabel})`);
           return peeked.response;
         }
 
@@ -575,6 +571,7 @@ export async function handleComboChat({
         // Drain/close the discarded stream in the background so its usage logging still runs.
         peeked.response.body?.cancel?.().catch(() => {});
         lastError = `empty generation (${reasonLabel})`;
+        trace.failed(i, 200, lastError);
         if (!lastStatus) lastStatus = 502;
         continue;
       }
@@ -611,6 +608,7 @@ export async function handleComboChat({
 
       if (!shouldFallback && !requestScoped) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        trace.finish(i, result.status, errorText);
         return result;
       }
 
@@ -626,6 +624,7 @@ export async function handleComboChat({
         lastError = errorText || String(result.status);
         if (!lastStatus) lastStatus = result.status;
         if (!requestScopedResult) requestScopedResult = result;
+        trace.failed(i, result.status, errorText);
         continue;
       }
 
@@ -641,6 +640,7 @@ export async function handleComboChat({
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
+      trace.failed(i, result.status, errorText);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
@@ -649,6 +649,7 @@ export async function handleComboChat({
       }
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
+      trace.failed(i, 500, lastError);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
@@ -658,6 +659,7 @@ export async function handleComboChat({
   // synthesized one reaches the client as a 200 carrying an error object, which
   // reads as an empty success, and it buries the member that named the real cause.
   // This is also what the caller saw before combos advanced on these errors.
+  trace.finish(null);
   if (requestScopedResult) {
     log.warn("COMBO", `No model served the request; returning the first request-scoped failure (${requestScopedResult.status})`);
     return requestScopedResult;

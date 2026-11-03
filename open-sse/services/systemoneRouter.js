@@ -10,6 +10,10 @@ export const DEFAULT_SYSTEMONE_TIMEOUT_MS = 8000;
 // still lands in the session sticky for the next turn.
 export const SMART_WAIT_MS = 400;
 export const MAX_STATE_CHARS = 2000;
+// How many trailing user turns to include: a short follow-up ("continue", "again")
+// only routes correctly with the turns before it, but full history wastes tokens.
+const CONTEXT_TURNS = 3;
+const EARLY_TURN_CHARS = 300;
 export const MAX_STICKY_SESSIONS = 5000;
 export const STICKY_SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
@@ -36,16 +40,18 @@ export function extractPromptState(body, maxChars = MAX_STATE_CHARS) {
     : (Array.isArray(body.input) ? body.input : null);
 
   if (messages && messages.length > 0) {
-    // Find the latest user message
-    for (let i = messages.length - 1; i >= 0; i--) {
+    // Last few user turns (newest last). A short follow-up on its own is ambiguous;
+    // the preceding turns disambiguate without sending the whole history.
+    const userTexts = [];
+    for (let i = messages.length - 1; i >= 0 && userTexts.length < CONTEXT_TURNS; i--) {
       const msg = messages[i];
       if (msg?.role === "user" || msg?.type === "message" || (!msg?.role && msg?.content)) {
         const text = extractTextFromContent(msg.content ?? msg.text);
-        if (text && text.trim().length > 0) {
-          return text.trim().slice(0, maxChars);
-        }
+        if (text && text.trim().length > 0) userTexts.unshift(text.trim());
       }
     }
+    if (userTexts.length > 0) return joinPromptContext(userTexts, maxChars);
+
     // Fallback: latest message of any role
     const lastMsg = messages[messages.length - 1];
     const text = extractTextFromContent(lastMsg?.content ?? lastMsg?.text);
@@ -61,6 +67,17 @@ export function extractPromptState(body, maxChars = MAX_STATE_CHARS) {
   }
 
   return "";
+}
+
+// Newest turn keeps the budget; earlier turns are clipped and marked so Jev knows
+// they are context, not the request itself.
+function joinPromptContext(texts, maxChars) {
+  const last = texts[texts.length - 1];
+  if (texts.length === 1) return last.slice(0, maxChars);
+  const earlier = texts.slice(0, -1).map((t) => `[earlier] ${t.slice(0, EARLY_TURN_CHARS)}`).join("\n");
+  const current = `[current] ${last}`;
+  // Prefer the current turn when over budget.
+  return current.length >= maxChars ? last.slice(0, maxChars) : `${earlier}\n${current}`.slice(-maxChars);
 }
 
 function extractTextFromContent(content) {

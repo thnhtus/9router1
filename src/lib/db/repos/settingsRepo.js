@@ -23,6 +23,8 @@ const DEFAULT_SETTINGS = {
     audioInput: { enabled: true, roundRobin: false, models: [] },
     videoInput: { enabled: false, roundRobin: false, models: [] },
   },
+  // Extra candidates Jev may route to for smart combos (cost optimization).
+  smartAutoPool: { enabled: false, models: [] },
   requireLogin: true,
   requireApiKey: true,
   tunnelDashboardAccess: true,

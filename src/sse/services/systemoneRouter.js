@@ -3,7 +3,7 @@ import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { createHash } from "node:crypto";
 import { getRoutingProfiles, getModelTiers } from "@/lib/llmStats.js";
-import { appendJevLog } from "@/lib/jevLogs.js";
+import { appendJevLog, countJevSkip, recordBreakerEvent, loadOpenBreaker } from "@/lib/jevLogs.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import {
   DEFAULT_SYSTEMONE_ROUTER_MODEL,
@@ -18,6 +18,23 @@ import {
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 500;
 const routeCache = new Map();
+
+// Circuit breaker: after BREAKER_FAILS consecutive failures, skip Jev for BREAKER_COOLDOWN_MS
+// so a down/rate-limited router doesn't add a doomed call to every combo request.
+const BREAKER_FAILS = 3;
+const BREAKER_COOLDOWN_MS = 30 * 1000;
+// On globalThis so the dashboard API route sees the same state even if Next bundles routes separately.
+const breaker = (globalThis.__jevBreaker ??= { fails: 0, openUntil: 0, skipped: 0, restored: null });
+// Restore a still-active pause from the DB once per process, so a restart doesn't hammer a down router.
+const breakerReady = () => (breaker.restored ??= loadOpenBreaker()
+  .then((until) => { if (until > breaker.openUntil) breaker.openUntil = until; })
+  .catch(() => {}));
+
+/** For the dashboard: is Jev paused, until when, and how many calls were skipped since start. */
+export const getJevBreakerState = () => ({
+  open: Date.now() < breaker.openUntil, openUntil: breaker.openUntil || null,
+  skipped: breaker.skipped, failStreak: breaker.fails,
+});
 
 function cacheKey(body, models) {
   return createHash("sha256").update(JSON.stringify([extractPromptState(body), models])).digest("hex");
@@ -45,11 +62,30 @@ export async function resolveSmartChoice(opts) {
   const hit = routeCache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.route;
 
+  await breakerReady();
+  if (Date.now() < breaker.openUntil) { // open: no call, no log row — just count the skip
+    breaker.skipped++;
+    countJevSkip(opts.comboName).catch(() => {});
+    return null;
+  }
+  if (breaker.openUntil) { // pause just ended: record the close once
+    breaker.openUntil = 0;
+    recordBreakerEvent({ kind: "close" }).catch(() => {});
+  }
+
   const trace = { comboName: opts.comboName || null, models: opts.models };
   const started = Date.now();
   let route = null;
   try {
     route = await evaluate(opts, trace);
+    // Only router faults trip the breaker; an empty prompt is not a failure.
+    if (route) breaker.fails = 0;
+    else if (trace.error !== "empty prompt state" && ++breaker.fails >= BREAKER_FAILS) {
+      breaker.openUntil = Date.now() + BREAKER_COOLDOWN_MS;
+      recordBreakerEvent({ kind: "open", failStreak: breaker.fails, reason: trace.error || null, until: breaker.openUntil }).catch(() => {});
+      breaker.fails = 0;
+      opts.log?.warn?.("COMBO", `smart-router: ${BREAKER_FAILS} failures in a row, pausing Jev for ${BREAKER_COOLDOWN_MS / 1000}s`);
+    }
     if (route) {
       route = groupRouteByTier(route, await getModelTiers(opts.models));
       if (routeCache.size >= CACHE_MAX) routeCache.delete(routeCache.keys().next().value);
@@ -115,25 +151,15 @@ async function evaluate({
       },
     };
 
-    let timeoutId;
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error(`System One router timed out after ${timeoutMs}ms`)), timeoutMs);
-    });
-
-    const corePromise = handleSystemoneCore({
+    // timeoutMs aborts the fetch itself, so a hung router never leaves a socket open.
+    const result = await handleSystemoneCore({
       body: systemoneBody,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
       onRequestSuccess: () => {},
+      timeoutMs,
     });
-
-    let result;
-    try {
-      result = await Promise.race([corePromise, timeoutPromise]);
-    } finally {
-      clearTimeout(timeoutId);
-    }
 
     trace.status = result?.success ? 200 : (result?.status ?? null);
     if (!result?.success || !result.response) {

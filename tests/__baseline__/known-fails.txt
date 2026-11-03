@@ -24,8 +24,6 @@ tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object 
 
 # Stale expectations fixed by decolua/9router#3665 (search auto-switch disabled on purpose;
 # reorder returns a copy).
-tests/unit/combo-autoswitch.test.js :: detectRequiredCapabilities web_search tool -> search
-tests/unit/combo-autoswitch.test.js :: reorderByCapabilities keeps order when no model matches
 
 # Live call: the upstream now answers "Unsupported model mimo-auto", the only model the
 # (hidden since 6d96e24b) mimo-free / mmf providers list.

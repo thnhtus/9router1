@@ -44,7 +44,8 @@ describe("System One Smart Combo Router", () => {
           { role: "user", content: "Now optimize it with SIMD" },
         ],
       };
-      expect(extractPromptState(body)).toBe("Now optimize it with SIMD");
+      // Includes the preceding user turn as short context (new behavior: disambiguates follow-ups).
+      expect(extractPromptState(body)).toBe("[earlier] Write a quicksort in Rust\n[current] Now optimize it with SIMD");
     });
 
     it("extracts text from block-based content arrays", () => {
@@ -460,6 +461,55 @@ describe("System One Smart Combo Router", () => {
 
       // Verify the session now holds deepseek as its new sticky model
       expect(getStickyComboModel("dev-combo", "session-adaptive", ["cx/gpt-5-mini", "ds/deepseek-v4"])).toBe("ds/deepseek-v4");
+    });
+
+    it("smart-switch: retains sticky model when the high-confidence choice is in the same tier (peers)", async () => {
+      const calls = [];
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        calls.push(model);
+        return okResponse(`Answer from ${model}`);
+      });
+
+      let currentDecision = { choice: "cc/claude-sonnet-5", confidence: 0.9, peers: ["cc/claude-sonnet-5"] };
+      const resolveSmartChoice = vi.fn(async () => currentDecision);
+
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Task 1" }] },
+        models: ["cc/claude-sonnet-5", "cc/claude-sonnet-5-5", "ds/deepseek-v4"],
+        handleSingleModel, log, comboName: "dev-combo", comboStrategy: "smart",
+        sessionId: "session-sametier", smartPolicy: "smart-switch", resolveSmartChoice,
+      });
+      expect(calls[0]).toBe("cc/claude-sonnet-5");
+
+      // High confidence, but the new choice is a peer (same tier) of the sticky model:
+      // must NOT switch, even though confidence clears the threshold.
+      currentDecision = { choice: "cc/claude-sonnet-5-5", confidence: 0.95, peers: ["cc/claude-sonnet-5", "cc/claude-sonnet-5-5"] };
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Task 2" }] },
+        models: ["cc/claude-sonnet-5", "cc/claude-sonnet-5-5", "ds/deepseek-v4"],
+        handleSingleModel, log, comboName: "dev-combo", comboStrategy: "smart",
+        sessionId: "session-sametier", smartPolicy: "smart-switch", resolveSmartChoice,
+      });
+      expect(calls[1]).toBe("cc/claude-sonnet-5"); // retained, same tier as sticky
+      expect(getStickyComboModel("dev-combo", "session-sametier", ["cc/claude-sonnet-5", "cc/claude-sonnet-5-5", "ds/deepseek-v4"])).toBe("cc/claude-sonnet-5");
+    });
+
+    it("strict policy still calls the router on turn 1 (no sticky yet) and locks afterward", async () => {
+      const calls = [];
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        calls.push(model);
+        return okResponse(`Answer from ${model}`);
+      });
+      const resolveSmartChoice = vi.fn(async () => ({ choice: "ds/deepseek-v4", confidence: 0.9 }));
+
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "First turn" }] },
+        models: ["cx/gpt-5-mini", "ds/deepseek-v4"], handleSingleModel, log,
+        comboName: "dev-combo", comboStrategy: "smart", sessionId: "session-strict-first",
+        smartPolicy: "strict", resolveSmartChoice,
+      });
+      expect(resolveSmartChoice).toHaveBeenCalledTimes(1); // no sticky yet -> must evaluate
+      expect(calls[0]).toBe("ds/deepseek-v4");
     });
 
     it("accepts chosen model when confidence meets or exceeds confidenceThreshold", async () => {

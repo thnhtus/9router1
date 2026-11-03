@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { Card, Button, Badge } from "@/shared/components";
 
-const PAGE = 100;
-const fetchLogs = (before) => fetch(`/api/jev-logs?limit=${PAGE}${before ? `&before=${before}` : ""}`).then((r) => r.json());
+const PAGE = 50;
+const fetchLogs = (page = 1) => fetch(`/api/jev-logs?limit=${PAGE}&page=${page}`).then((r) => r.json());
 
 function Json({ label, value }) {
   return (
@@ -15,29 +15,49 @@ function Json({ label, value }) {
   );
 }
 
+// Last-24h health strip (hourly counters, kept beyond the 1000-row log): failure rate + latency + whether the circuit breaker paused Jev.
+function JevHealth({ data }) {
+  if (!data?.stats) return null;
+  const { total, failed, avgLatencyMs } = data.stats;
+  const rate = total ? Math.round(((failed || 0) / total) * 100) : 0;
+  const b = data.breaker || {};
+  return (
+    <p className="mb-3 text-sm text-text-muted" role="status">
+      Last 24h: <span className="tabular-nums text-text">{total}</span> decisions ·{" "}
+      <span className={`tabular-nums ${rate >= 20 ? "text-red-500" : "text-text"}`}>{rate}%</span> failed ·{" "}
+      avg <span className="tabular-nums text-text">{avgLatencyMs ?? "—"}</span> ms
+      {b.open
+        ? <> · <Badge variant="error">paused until {new Date(b.openUntil).toLocaleTimeString()}</Badge></>
+        : b.failStreak > 0 && <> · {b.failStreak} failure(s) in a row</>}
+      {b.skipped > 0 && <> · {b.skipped} request(s) skipped Jev while paused</>}
+    </p>
+  );
+}
+
 export default function JevLogsCard() {
   const [logs, setLogs] = useState(null);
   const [open, setOpen] = useState(null); // { id, detail }
   const [msg, setMsg] = useState("");
-  const [more, setMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [health, setHealth] = useState(null);
+  const loadHealth = useCallback(() => fetch("/api/jev-logs?stats=1&hours=24").then((r) => r.json()).then(setHealth).catch(() => {}), []);
 
   const apply = useCallback((d) => {
     if (d.error) return setMsg(d.error);
     setLogs(d.logs);
-    setMore(d.logs.length === PAGE);
+    if (d.total != null) setTotal(d.total);
+    if (d.page != null) setPage(d.page);
   }, []);
-  const loadMore = () => fetchLogs(logs.at(-1).id).then((d) => {
-    if (d.error) return setMsg(d.error);
-    setLogs((prev) => [...prev, ...d.logs]);
-    setMore(d.logs.length === PAGE);
-  }).catch((e) => setMsg(e.message));
-  const reload = () => fetchLogs().then(apply).catch((e) => setMsg(e.message));
+  const loadPage = (p) => fetchLogs(p).then(apply).catch((e) => setMsg(e.message));
+  const reload = () => { loadHealth(); return loadPage(1); };
 
   useEffect(() => {
     let alive = true;
-    fetchLogs().then((d) => alive && apply(d)).catch((e) => alive && setMsg(e.message));
+    fetchLogs(1).then((d) => alive && apply(d)).catch((e) => alive && setMsg(e.message));
+    loadHealth();
     return () => { alive = false; };
-  }, [apply]);
+  }, [apply, loadHealth]);
 
   const toggle = async (id) => {
     if (open?.id === id) return setOpen(null);
@@ -64,6 +84,7 @@ export default function JevLogsCard() {
         </div>
       }
     >
+      <JevHealth data={health} />
       {msg && <p className="mb-2 text-sm text-text-muted" role="status">{msg}</p>}
       {!logs ? <p className="text-sm text-text-muted">Loading…</p> : !logs.length ? (
         <p className="text-sm text-text-muted">No decisions yet. Turn on Jev for a combo above and send a request through it.</p>
@@ -111,7 +132,15 @@ export default function JevLogsCard() {
               ))}
             </tbody>
           </table>
-          {more && <div className="mt-3 flex justify-center"><Button size="sm" variant="secondary" onClick={loadMore}>Load more</Button></div>}
+          {total > PAGE && (
+            <div className="mt-3 flex items-center justify-between text-sm">
+              <span className="text-text-muted">Page {page} of {Math.max(1, Math.ceil(total / PAGE))} ({total} total)</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => loadPage(page - 1)} disabled={page <= 1}>Prev</Button>
+                <Button size="sm" variant="secondary" onClick={() => loadPage(page + 1)} disabled={page >= Math.ceil(total / PAGE)}>Next</Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Card>
