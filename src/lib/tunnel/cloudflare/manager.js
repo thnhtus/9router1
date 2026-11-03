@@ -40,7 +40,7 @@ export async function enableTunnel(localPort = 20128) {
 
   try {
     if (isCloudflaredRunning()) {
-      const existing = loadState();
+      const existing = await loadState();
       if (existing?.tunnelUrl && existing?.shortId) {
         const publicUrl = `https://r${existing.shortId}.abc-tunnel.us`;
         // Reuse only if BOTH direct + public URL alive (avoid stale socket after network change)
@@ -60,14 +60,14 @@ export async function enableTunnel(localPort = 20128) {
     console.log("[Tunnel] killed existing cloudflared");
     throwIfCancelled(token);
 
-    const existing = loadState();
+    const existing = await loadState();
     const shortId = existing?.shortId || generateShortId();
 
     const onUrlUpdate = async (url) => {
       if (token.cancelled) return;
       console.log(`[Tunnel] url updated: ${url}`);
       await registerTunnelUrl(shortId, url);
-      saveState({ shortId, tunnelUrl: url });
+      await saveState({ shortId, tunnelUrl: url });
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
     };
 
@@ -83,7 +83,7 @@ export async function enableTunnel(localPort = 20128) {
 
     const publicUrl = `https://r${shortId}.abc-tunnel.us`;
     await registerTunnelUrl(shortId, tunnelUrl);
-    saveState({ shortId, tunnelUrl });
+    await saveState({ shortId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
@@ -119,8 +119,8 @@ export async function disableTunnel() {
   try { killCloudflared(svc.activeLocalPort); } catch (e) { console.warn(`[Tunnel] kill warn: ${e.message}`); }
   clearPid();
 
-  const state = loadState();
-  if (state) saveState({ shortId: state.shortId, tunnelUrl: null });
+  const state = await loadState();
+  if (state) await saveState({ shortId: state.shortId, tunnelUrl: null });
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
   // Force-clear flags so a subsequent enable is not blocked by a stuck spawnInProgress
@@ -132,7 +132,7 @@ export async function disableTunnel() {
 export async function getTunnelStatus() {
   const settings = await getSettings();
   const settingsEnabled = settings.tunnelEnabled === true;
-  const state = loadState();
+  const state = await loadState();
   const shortId = state?.shortId || "";
   const publicUrl = shortId ? `https://r${shortId}.abc-tunnel.us` : "";
   const tunnelUrl = state?.tunnelUrl || "";

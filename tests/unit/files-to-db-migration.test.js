@@ -1,0 +1,21 @@
+import fs from "node:fs"; import os from "node:os"; import path from "node:path";
+import { it, expect, vi } from "vitest";
+it("imports pxpipe jsonl + tunnel state, then reads/writes via db", async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "9r-m002-"));
+  process.env.DATA_DIR = d; delete global._dbAdapter; vi.resetModules();
+  fs.mkdirSync(path.join(d, "pxpipe")); fs.mkdirSync(path.join(d, "tunnel"));
+  fs.writeFileSync(path.join(d, "pxpipe/events.jsonl.1"), JSON.stringify({ ts: 1, applied: true, tokensSavedEst: 5 }) + "\nbad\n");
+  fs.writeFileSync(path.join(d, "pxpipe/events.jsonl"), JSON.stringify({ ts: 2, reason: "timeout" }) + "\n");
+  fs.writeFileSync(path.join(d, "tunnel/state.json"), JSON.stringify({ shortId: "abc123", tunnelUrl: null }));
+  const ev = await import("@/lib/pxpipe/events.js");
+  expect((await ev.readPxpipeEvents()).map((e) => e.ts)).toEqual([1, 2]);
+  expect((await ev.readPxpipeEvents({ limit: 1 }))[0].ts).toBe(2);
+  const { loadState, saveState } = await import("@/lib/tunnel/shared/state.js");
+  expect(await loadState()).toEqual({ shortId: "abc123", tunnelUrl: null });
+  await saveState({ shortId: "abc123", tunnelUrl: "u" });
+  expect((await loadState()).tunnelUrl).toBe("u");
+  ev.appendPxpipeEvent({ applied: false });
+  await new Promise((r) => setTimeout(r, 50));
+  expect((await ev.getPxpipeStats()).windows.all.requests).toBe(3);
+  global._dbAdapter?.instance?.close?.(); delete global._dbAdapter; fs.rmSync(d, { recursive: true, force: true });
+});

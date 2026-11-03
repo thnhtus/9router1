@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { recordComboCost } from "open-sse/services/comboTrace.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -227,7 +228,8 @@ export async function getActiveRequests() {
       };
     })
     .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
+      const isFailed = typeof e.status === "string" && /fail/i.test(e.status);
+      if (!isFailed && e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
       const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
@@ -246,6 +248,7 @@ export async function saveRequestUsage(entry) {
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    recordComboCost(entry.cost, entry.tokens);
 
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
@@ -672,8 +675,52 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
+// Per-bucket breakdown for the line charts: { model|account|apiKey|endpoint: { [name]: { tokens, cost, requests } } }.
+// Names are display labels only; raw API keys never leave the server (name or masked).
+async function seriesNamers() {
+  const connMap = await getConnectionMapCached();
+  const keyNames = {};
+  try {
+    const { getApiKeys } = await import("./apiKeysRepo.js");
+    for (const k of await getApiKeys()) if (k.key && k.name) keyNames[k.key.trim()] = k.name;
+  } catch {}
+  return {
+    account: (id) => (id ? connMap[id] || `Account ${id.slice(0, 8)}...` : null),
+    apiKey: (key) => (key ? keyNames[key.trim()] || maskApiKey(key) : "Local (No API Key)"),
+  };
+}
+
+function addSeries(series, dim, name, tokens, cost, requests = 1) {
+  if (!name) return;
+  const m = ((series[dim] ||= {})[name] ||= { tokens: 0, cost: 0, requests: 0 });
+  m.tokens += tokens; m.cost += cost; m.requests += requests;
+}
+
+function rowSeries(series, r, names) {
+  const tokens = (r.promptTokens || 0) + (r.completionTokens || 0), cost = r.cost || 0;
+  addSeries(series, "model", r.model || "unknown", tokens, cost);
+  addSeries(series, "account", names.account(r.connectionId), tokens, cost);
+  addSeries(series, "apiKey", names.apiKey(r.apiKey), tokens, cost);
+  addSeries(series, "endpoint", r.endpoint || "Unknown", tokens, cost);
+}
+
+function daySeries(dayData, names) {
+  const series = {};
+  const add = (dim, map, nameOf) => {
+    for (const [k, m] of Object.entries(map || {})) {
+      addSeries(series, dim, nameOf(k, m), (m.promptTokens || 0) + (m.completionTokens || 0), m.cost || 0, m.requests || 0);
+    }
+  };
+  add("model", dayData?.byModel, (k, m) => m.rawModel || k.split("|")[0]);
+  add("account", dayData?.byAccount, (k) => names.account(k));
+  add("apiKey", dayData?.byApiKey, (k, m) => names.apiKey(m.apiKey ?? (k.startsWith("local-no-key|") ? null : k.split("|")[0])));
+  add("endpoint", dayData?.byEndpoint, (k, m) => m.endpoint || k.split("|")[0]);
+  return series;
+}
+
 export async function getChartData(period = "7d") {
   const db = await getAdapter();
+  const names = await seriesNamers();
   const now = Date.now();
 
   if (period === "today") {
@@ -684,10 +731,10 @@ export async function getChartData(period = "7d") {
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0, series: {} }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -698,6 +745,7 @@ export async function getChartData(period = "7d") {
         buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
         buckets[idx].cost += r.cost || 0;
         buckets[idx].requests += 1;
+        rowSeries(buckets[idx].series, r, names);
       }
     }
     return buckets;
@@ -708,10 +756,10 @@ export async function getChartData(period = "7d") {
     const bucketMs = 3600000;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0, series: {} }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -721,6 +769,7 @@ export async function getChartData(period = "7d") {
       buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
       buckets[idx].cost += r.cost || 0;
       buckets[idx].requests += 1;
+      rowSeries(buckets[idx].series, r, names);
     }
     return buckets;
   }
@@ -744,10 +793,12 @@ export async function getChartData(period = "7d") {
       const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const dayData = dayMap[dateKey];
       return {
+        date: dateKey,
         label: labelFn(d),
         tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
         cost: dayData ? (dayData.cost || 0) : 0,
         requests: dayData ? (dayData.requests || 0) : 0,
+        series: daySeries(dayData, names),
       };
     });
   }
@@ -770,6 +821,7 @@ export async function getChartData(period = "7d") {
       tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
       cost: dayData ? (dayData.cost || 0) : 0,
       requests: dayData ? (dayData.requests || 0) : 0,
+      series: daySeries(dayData, names),
     };
   });
 }
@@ -779,8 +831,25 @@ function formatLogDate(date = new Date()) {
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-// No-op: request log is now derived from usageHistory table on read.
-export async function appendRequestLog() {}
+// Push a (possibly failed/pending) entry into the recent ring so the dashboard's
+// Live Queue can show done/failed counts. Successes are recorded via saveRequestUsage.
+export async function appendRequestLog(entry = {}) {
+  try {
+    const e = entry || {};
+    pushToRing({
+      timestamp: e.timestamp || new Date().toISOString(),
+      provider: e.provider || "",
+      model: e.model || "",
+      connectionId: e.connectionId || null,
+      apiKey: e.apiKey || null,
+      endpoint: e.endpoint || null,
+      cost: 0,
+      status: e.status || "ok",
+      tokens: e.tokens || {},
+    });
+    scheduleStatsEvent("update", 250);
+  } catch {}
+}
 
 export async function getRecentLogs(limit = 200) {
   try {

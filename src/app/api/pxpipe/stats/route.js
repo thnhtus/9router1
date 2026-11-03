@@ -7,7 +7,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const recentLimit = Math.min(Number(searchParams.get("limit")) || 100, 500);
-    return NextResponse.json(getPxpipeStats({ recentLimit }));
+    return NextResponse.json(await getPxpipeStats({ recentLimit }));
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

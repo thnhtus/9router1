@@ -10,7 +10,7 @@ export async function GET(request) {
     const limit = Math.min(Number(searchParams.get("limit")) || 100, 500);
     return NextResponse.json({
       installLog: getInstallLogTail(),
-      events: readPxpipeEvents({ limit }).reverse(),
+      events: (await readPxpipeEvents({ limit })).reverse(),
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

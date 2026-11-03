@@ -1,45 +1,30 @@
-import fs from "fs";
-import path from "path";
-import { PXPIPE_DIR } from "./install.js";
+import { getAdapter } from "@/lib/db/driver.js";
 
-const EVENTS_FILE = path.join(PXPIPE_DIR, "events.jsonl");
-const ROTATED_FILE = path.join(PXPIPE_DIR, "events.jsonl.1");
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+// Same order of magnitude the old 2×5MB rotated JSONL held.
+const MAX_ROWS = 50000;
+const PRUNE_EVERY = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function ensureDir() {
-  if (!fs.existsSync(PXPIPE_DIR)) fs.mkdirSync(PXPIPE_DIR, { recursive: true });
-}
+let inserts = 0;
 
 // Fire-and-forget: stats must never break the request path.
 export function appendPxpipeEvent(event) {
-  try {
-    ensureDir();
-    try {
-      const stat = fs.statSync(EVENTS_FILE);
-      if (stat.size > MAX_FILE_BYTES) fs.renameSync(EVENTS_FILE, ROTATED_FILE);
-    } catch { /* no file yet */ }
-    fs.appendFile(EVENTS_FILE, JSON.stringify({ ts: Date.now(), ...event }) + "\n", () => {});
-  } catch { /* ignore */ }
+  const ts = Date.now();
+  getAdapter().then((a) => {
+    a.run(`INSERT INTO pxpipeEvents(ts, data) VALUES(?, ?)`, [ts, JSON.stringify({ ts, ...event })]);
+    if (++inserts % PRUNE_EVERY === 0) a.run(`DELETE FROM pxpipeEvents WHERE id <= (SELECT MAX(id) FROM pxpipeEvents) - ?`, [MAX_ROWS]);
+  }).catch(() => { /* ignore */ });
 }
 
-export function readPxpipeEvents({ sinceMs = null, limit = null } = {}) {
+export async function readPxpipeEvents({ sinceMs = null, limit = null } = {}) {
+  const a = await getAdapter();
+  const rows = limit
+    ? a.all(`SELECT data FROM pxpipeEvents WHERE ts >= ? ORDER BY ts DESC, id DESC LIMIT ?`, [sinceMs || 0, limit]).reverse()
+    : a.all(`SELECT data FROM pxpipeEvents WHERE ts >= ? ORDER BY ts, id`, [sinceMs || 0]);
   const events = [];
-  for (const file of [ROTATED_FILE, EVENTS_FILE]) {
-    try {
-      if (!fs.existsSync(file)) continue;
-      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-        if (!line) continue;
-        try {
-          const ev = JSON.parse(line);
-          if (sinceMs && ev.ts < sinceMs) continue;
-          events.push(ev);
-        } catch { /* skip corrupt line */ }
-      }
-    } catch { /* ignore */ }
+  for (const r of rows) {
+    try { events.push(JSON.parse(r.data)); } catch { /* skip corrupt row */ }
   }
-  events.sort((a, b) => a.ts - b.ts);
-  return limit ? events.slice(-limit) : events;
+  return events;
 }
 
 function emptyTotals() {
@@ -78,8 +63,8 @@ function finalize(totals) {
 
 // Aggregated stats for the dashboard: all-time + windowed totals, a daily
 // tokens-saved timeline (last `timelineDays`), and the most recent events.
-export function getPxpipeStats({ timelineDays = 30, recentLimit = 100 } = {}) {
-  const events = readPxpipeEvents();
+export async function getPxpipeStats({ timelineDays = 30, recentLimit = 100 } = {}) {
+  const events = await readPxpipeEvents();
   const now = Date.now();
   const startOfToday = new Date(new Date(now).setHours(0, 0, 0, 0)).getTime();
 

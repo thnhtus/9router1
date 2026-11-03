@@ -34,7 +34,7 @@ export async function enableTailscale(localPort = 20128) {
     console.log("[Tailscale] daemon ready");
     throwIfCancelled(token);
 
-    const existing = loadState();
+    const existing = await loadState();
     const shortId = existing?.shortId || generateShortId();
     const tsHostname = shortId;
 

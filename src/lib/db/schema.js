@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 4;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -155,6 +155,54 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
+  },
+  // Jev (System One) routing audit: one row per decision, capped at 1000 (src/lib/jevLogs.js).
+  jevLogs: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      createdAt: "TEXT NOT NULL",
+      comboName: "TEXT",
+      routerModel: "TEXT",
+      choice: "TEXT",
+      confidence: "REAL",
+      latencyMs: "INTEGER",
+      status: "INTEGER",
+      error: "TEXT",
+      request: "TEXT",
+      response: "TEXT",
+    },
+  },
+  // Hourly Jev counters, kept forever (small) so stats survive the jevLogs cap and restarts.
+  jevHourly: {
+    columns: {
+      hour: "TEXT NOT NULL", // ISO, truncated to the hour (UTC)
+      comboName: "TEXT NOT NULL DEFAULT ''",
+      total: "INTEGER NOT NULL DEFAULT 0",
+      failed: "INTEGER NOT NULL DEFAULT 0",
+      skipped: "INTEGER NOT NULL DEFAULT 0", // requests that bypassed Jev while the breaker was open
+      latencySum: "INTEGER NOT NULL DEFAULT 0",
+      latencyN: "INTEGER NOT NULL DEFAULT 0",
+    },
+    primaryKey: "PRIMARY KEY (hour, comboName)",
+  },
+  // PXPIPE compression events (was DATA_DIR/pxpipe/events.jsonl), capped in src/lib/pxpipe/events.js.
+  pxpipeEvents: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      ts: "INTEGER NOT NULL", // epoch ms
+      data: "TEXT NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_pxe_ts ON pxpipeEvents(ts)"],
+  },
+  jevBreakerEvents: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      at: "TEXT NOT NULL",
+      kind: "TEXT NOT NULL", // 'open' | 'close'
+      failStreak: "INTEGER NOT NULL DEFAULT 0",
+      reason: "TEXT",
+      until: "TEXT", // open only: when the pause ends
+    },
   },
 };
 
