@@ -41,7 +41,7 @@ export default function DashboardLayout({ children }) {
   useEffect(() => {
     const preload = () => {
       import("@/shared/components/UsageStats").catch(() => {});
-      import("@/app/(dashboard)/dashboard/usage/components/UsageChart").catch(() => {});
+      import("@/app/(dashboard)/dashboard/usage/components/UsageCalendar").catch(() => {});
       import("@/app/(dashboard)/dashboard/usage/components/ProviderBarChart").catch(() => {});
       import("@/app/(dashboard)/dashboard/usage/components/TopModelsChart").catch(() => {});
     };

@@ -1,16 +1,9 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+// Visual clone of affectUI "Agent Graph" (captured with REA): hub + discs, orthogonal
+// rounded links, pulses travelling along live links, breathing ring on busy nodes.
+import { useMemo, useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import {
-  ReactFlow,
-  Handle,
-  Position,
-  Controls,
-  BaseEdge,
-  getBezierPath,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 
@@ -18,341 +11,85 @@ import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/prov
 const FE_ACTIVE_TIMEOUT_MS = 60000;
 const FE_ACTIVE_TICK_MS = 1000;
 
-// Kame + electric particles along active edges
-const KAME_PARTICLE_COUNT = 6;
-const SPARK_COUNT = 5;
+const GAP_X = 96; // column pitch
+const ROW = 110; // row pitch
+const BUS = 40; // bus line distance from its row
+const PAD = 64;
+const D = 40; // provider disc
+const HUB_D = 56;
+const R = 8; // corner radius
+const MAX_COLS = 8;
 
-function getProviderConfig(providerId) {
-  return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
+// Slots alternate around the trunk (-0.5, +0.5, -1.5, ...) so no disc ever sits on it.
+const slot = (j) => (j % 2 === 0 ? -1 : 1) * (Math.floor(j / 2) + 0.5);
+
+// Trunk from hub (x0,y0) to bus y, along the bus to x, then into the node at y.
+function linkPath(x0, y0, busY, x, y) {
+  const dy = Math.sign(busY - y0);
+  const dx = Math.sign(x - x0);
+  return `M${x0} ${y0}L${x0} ${busY - dy * R}Q${x0} ${busY} ${x0 + dx * R} ${busY}`
+    + `L${x - dx * R} ${busY}Q${x} ${busY} ${x} ${busY + dy * R}L${x} ${y}`;
 }
 
-function getProviderImageUrl(providerId) {
-  return getProviderIconSrc(providerId);
-}
+function buildLayout(providers) {
+  const n = providers.length;
+  const perSide = Math.ceil(n / 2);
+  const cols = Math.min(MAX_COLS, Math.max(2, perSide + (perSide % 2)));
+  const rowsTop = Math.ceil(perSide / cols);
+  const rowsBottom = Math.ceil((n - perSide) / cols);
+  const width = cols * GAP_X + PAD * 2;
+  const cx = width / 2;
+  const cy = PAD + 24 + Math.max(rowsTop, 1) * ROW;
+  const height = cy + Math.max(rowsBottom, 1) * ROW + PAD;
 
-// Custom provider node - rectangle with image + name
-function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active } = data;
-  const [imgError, setImgError] = useState(false);
-  return (
-    <div
-      className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-background"
-      style={{
-        borderColor: active ? color : "var(--color-border)",
-        boxShadow: active ? `0 0 16px ${color}40` : "none",
-        minWidth: "150px",
-      }}
-    >
-      <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
-
-      {/* Provider icon */}
-      <div
-        className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${color}15` }}
-      >
-        {imageUrl && !imgError ? (
-          <img
-            src={imageUrl}
-            alt={label}
-            className="w-6 h-6 rounded-sm object-contain"
-            loading="lazy"
-            decoding="async"
-            onError={() => {
-              const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
-              if (m) markProviderIconMissing(m[1]);
-              setImgError(true);
-            }}
-          />
-        ) : (
-          <span className="text-sm font-bold" style={{ color }}>{textIcon}</span>
-        )}
-      </div>
-
-      {/* Provider name */}
-      <span
-        className="text-base font-medium truncate"
-        style={{ color: active ? color : "var(--color-text)" }}
-      >
-        {label}
-      </span>
-
-      {/* Active indicator */}
-      {active && (
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
-        </span>
-      )}
-    </div>
-  );
-}
-
-ProviderNode.propTypes = {
-  data: PropTypes.object.isRequired,
-};
-
-// Center 9Router node — pulse/glow on card only (no expanding rings)
-function RouterNode({ data }) {
-  const powering = (data.activeCount || 0) > 0;
-  return (
-    <div
-      className={`relative z-[1] flex items-center justify-center px-5 py-3 rounded-xl border-2 min-w-[130px] ${
-        powering
-          ? "topology-router-core border-yellow-300 bg-gradient-to-br from-primary/30 via-yellow-400/20 to-cyan-400/25"
-          : "border-primary bg-primary/5 shadow-md"
-      }`}
-    >
-      <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
-
-      <img
-        src="/favicon.svg"
-        alt="9Router"
-        className={`w-6 h-6 mr-2 ${powering ? "topology-router-icon" : ""}`}
-        loading="lazy"
-        decoding="async"
-      />
-      <span className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-primary"}`}>
-        9Router
-      </span>
-      {data.activeCount > 0 && (
-        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-yellow-400 text-black text-xs font-bold topology-router-badge">
-          {data.activeCount}
-        </span>
-      )}
-    </div>
-  );
-}
-
-RouterNode.propTypes = {
-  data: PropTypes.object.isRequired,
-};
-
-// Active: electric kame beam (multi-layer stroke + sparks). Idle/last/error: solid BaseEdge.
-function TopologyEdge({
-  id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  style = {},
-  data,
-}) {
-  const [edgePath] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
+  const nodes = providers.map((p, i) => {
+    const top = i < perSide;
+    const k = top ? i : i - perSide;
+    const row = Math.floor(k / cols);
+    const dir = top ? -1 : 1;
+    const x = cx + slot(k % cols) * GAP_X;
+    const y = cy + dir * (row + 1) * ROW;
+    return { p, x, y, top, path: linkPath(cx, cy, y - dir * BUS, x, y) };
   });
-  const active = !!data?.active;
-  const stroke = style.stroke || "var(--color-border)";
-  const filterId = `topo-electric-${id}`;
+  return { nodes, width, height, cx, cy };
+}
 
-  if (!active) {
-    return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke }} />;
-  }
-
+function ProviderDisc({ node, state, onIconError, iconFailed }) {
+  const { p, x, y, top } = node;
+  const config = AI_PROVIDERS[p.provider] || { color: "#6b7280", name: p.provider };
+  const label = (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider;
+  const src = iconFailed ? null : getProviderIconSrc(p.provider);
+  const initials = config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase();
+  const r = D / 2;
   return (
-    <g className="topology-edge-electric">
-      <defs>
-        <filter id={filterId} x="-40%" y="-40%" width="180%" height="180%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2" result="noise">
-            <animate attributeName="baseFrequency" values="0.8;1.4;0.8" dur="0.25s" repeatCount="indefinite" />
-          </feTurbulence>
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </defs>
-      {/* Outer electric halo */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke="#22d3ee"
-        strokeWidth={10}
-        strokeOpacity={0.35}
-        strokeLinecap="round"
-        filter={`url(#${filterId})`}
-        className="topology-edge-halo"
-      />
-      {/* Mid plasma */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke="#4ade80"
-        strokeWidth={5}
-        strokeOpacity={0.85}
-        strokeLinecap="round"
-        filter={`url(#${filterId})`}
-        className="topology-edge-plasma"
-      />
-      {/* Hot white core */}
-      <BaseEdge
-        id={id}
-        path={edgePath}
-        style={{ stroke: "#f8fafc", strokeWidth: 2.2, opacity: 1 }}
-        className="topology-edge-kame"
-      />
-      {/* Energy orbs */}
-      {Array.from({ length: KAME_PARTICLE_COUNT }, (_, i) => (
-        <circle
-          key={`${id}-p-${i}`}
-          r={i % 2 === 0 ? 4 : 2.5}
-          fill={i % 3 === 0 ? "#fde047" : i % 3 === 1 ? "#67e8f9" : "#fff"}
-          opacity={0.95}
-          style={{ filter: "drop-shadow(0 0 4px #22d3ee)" }}
-        >
-          <animateMotion
-            dur={`${0.4 + i * 0.08}s`}
-            repeatCount="indefinite"
-            path={edgePath}
-            begin={`${i * 0.09}s`}
-          />
-        </circle>
-      ))}
-      {/* Electric sparks (short-lived blink along path) */}
-      {Array.from({ length: SPARK_COUNT }, (_, i) => (
-        <circle
-          key={`${id}-s-${i}`}
-          r={1.8}
-          fill="#e0f2fe"
-          opacity={0}
-        >
-          <animate
-            attributeName="opacity"
-            values="0;1;0;0;1;0"
-            dur={`${0.35 + (i % 3) * 0.1}s`}
-            begin={`${i * 0.07}s`}
-            repeatCount="indefinite"
-          />
-          <animateMotion
-            dur={`${0.28 + i * 0.05}s`}
-            repeatCount="indefinite"
-            path={edgePath}
-            begin={`${i * 0.11}s`}
-          />
-        </circle>
-      ))}
+    <g className="pt-node" data-status={state} transform={`translate(${x} ${y})`}>
+      <title>{`${label}${state !== "idle" ? ` · ${state}` : ""}`}</title>
+      {state === "active" && <circle className="pt-ring" r={r} />}
+      <circle className="pt-disc" r={r} />
+      {state === "error" && <circle className="pt-spin" r={r + 0.5} pathLength="1" />}
+      {src ? (
+        <image
+          href={src} x={-10} y={-10} width={20} height={20}
+          preserveAspectRatio="xMidYMid meet"
+          onError={() => onIconError(p.provider, src)}
+        />
+      ) : (
+        <text className="pt-initials" dy="0.35em" fill={config.color}>{initials}</text>
+      )}
+      {state === "last" && <circle className="pt-badge" cx={r * 0.72} cy={-r * 0.72} r={4} />}
+      <text className="pt-name" y={top ? -r - 10 : r + 16}>
+        {label.length > 16 ? `${label.slice(0, 15)}…` : label}
+      </text>
     </g>
   );
 }
 
-TopologyEdge.propTypes = {
-  id: PropTypes.string,
-  sourceX: PropTypes.number,
-  sourceY: PropTypes.number,
-  targetX: PropTypes.number,
-  targetY: PropTypes.number,
-  sourcePosition: PropTypes.string,
-  targetPosition: PropTypes.string,
-  style: PropTypes.object,
-  data: PropTypes.object,
+ProviderDisc.propTypes = {
+  node: PropTypes.object.isRequired,
+  state: PropTypes.string.isRequired,
+  onIconError: PropTypes.func.isRequired,
+  iconFailed: PropTypes.bool,
 };
-
-const nodeTypes = { provider: ProviderNode, router: RouterNode };
-const edgeTypes = { topology: TopologyEdge };
-
-// Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
-  const nodeW = 180;
-  const nodeH = 30;
-  const routerW = 120;
-  const routerH = 44;
-  const nodeGap = 24;
-
-  const count = providers.length;
-
-  // Compute rx so arc spacing between nodes >= nodeW + nodeGap
-  const minRx = ((nodeW + nodeGap) * count) / (2 * Math.PI);
-  const rx = Math.max(320, minRx);
-  const ry = Math.max(200, rx * 0.55); // ellipse ratio ~0.55
-  if (count === 0) {
-    return {
-      nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: 0 }, draggable: false }],
-      edges: [],
-    };
-  }
-
-  const nodes = [];
-  const edges = [];
-
-  nodes.push({
-    id: "router",
-    type: "router",
-    position: { x: -routerW / 2, y: -routerH / 2 },
-    data: { activeCount: activeSet.size },
-    draggable: false,
-  });
-
-  const edgeStyle = (active, last, error) => {
-    if (error) return { stroke: "#ef4444", strokeWidth: 2.5, opacity: 0.9 };
-    if (active) return { stroke: "#22d3ee", strokeWidth: 3.5, opacity: 1 };
-    if (last) return { stroke: "#f59e0b", strokeWidth: 2, opacity: 0.7 };
-    return { stroke: "var(--color-border)", strokeWidth: 1, opacity: 0.3 };
-  };
-
-  providers.forEach((p, i) => {
-    const config = getProviderConfig(p.provider);
-    const active = activeSet.has(p.provider?.toLowerCase());
-    const last = !active && lastSet.has(p.provider?.toLowerCase());
-    const error = !active && errorSet.has(p.provider?.toLowerCase());
-    const nodeId = `provider-${p.provider}`;
-    const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
-      color: config.color || "#6b7280",
-      imageUrl: getProviderImageUrl(p.provider),
-      textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
-      active,
-    };
-
-    // Distribute evenly starting from top (−π/2), clockwise
-    const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
-    const cx = rx * Math.cos(angle);
-    const cy = ry * Math.sin(angle);
-
-    // Pick router handle closest to the node direction
-    let sourceHandle, targetHandle;
-    if (Math.abs(angle + Math.PI / 2) < Math.PI / 4 || Math.abs(angle - 3 * Math.PI / 2) < Math.PI / 4) {
-      sourceHandle = "top"; targetHandle = "bottom";
-    } else if (Math.abs(angle - Math.PI / 2) < Math.PI / 4) {
-      sourceHandle = "bottom"; targetHandle = "top";
-    } else if (cx > 0) {
-      sourceHandle = "right"; targetHandle = "left";
-    } else {
-      sourceHandle = "left"; targetHandle = "right";
-    }
-
-    nodes.push({
-      id: nodeId,
-      type: "provider",
-      position: { x: cx - nodeW / 2, y: cy - nodeH / 2 },
-      data,
-      draggable: false,
-    });
-
-    edges.push({
-      id: `e-${nodeId}`,
-      type: "topology",
-      source: "router",
-      sourceHandle,
-      target: nodeId,
-      targetHandle,
-      // Built-in animated uses stroke-dasharray (CPU-heavy); use particle beam instead
-      animated: false,
-      data: { active },
-      style: edgeStyle(active, last, error),
-    });
-  });
-
-  return { nodes, edges };
-}
 
 export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
   // Serialize to stable string keys so useMemo only re-runs when values actually change
@@ -360,113 +97,124 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
     [activeRequests]
   );
+  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
   const lastKey = lastProvider?.toLowerCase() || "";
   const errorKey = errorProvider?.toLowerCase() || "";
 
-  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
-  const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
-  const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
-
   // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
-  const [tick, setTick] = useState(0);
+  const [staleKey, setStaleKey] = useState("");
 
   useEffect(() => {
     const seen = firstSeenRef.current;
     const now = Date.now();
-    for (const p of rawActiveSet) {
-      if (!seen[p]) seen[p] = now;
-    }
-    for (const p of Object.keys(seen)) {
-      if (!rawActiveSet.has(p)) delete seen[p];
-    }
-  }, [rawActiveSet]);
-
-  useEffect(() => {
+    for (const p of rawActiveSet) if (!seen[p]) seen[p] = now;
+    for (const p of Object.keys(seen)) if (!rawActiveSet.has(p)) delete seen[p];
     if (rawActiveSet.size === 0) return;
-    const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
+    const id = setInterval(() => {
+      const t = Date.now();
+      setStaleKey([...rawActiveSet].filter((p) => t - seen[p] >= FE_ACTIVE_TIMEOUT_MS).join(","));
+    }, FE_ACTIVE_TICK_MS);
     return () => clearInterval(id);
   }, [rawActiveSet]);
 
   const activeSet = useMemo(() => {
-    const now = Date.now();
-    const filtered = new Set();
-    for (const p of rawActiveSet) {
-      const ts = firstSeenRef.current[p];
-      if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
-    }
-    return filtered;
-  }, [rawActiveSet, tick]);
+    const stale = new Set(staleKey.split(","));
+    return new Set([...rawActiveSet].filter((p) => !stale.has(p)));
+  }, [rawActiveSet, staleKey]);
 
-  const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
-  );
+  const [failedIcons, setFailedIcons] = useState({});
+  const onIconError = (id, src) => {
+    const m = src?.match(/^\/providers\/([^/]+)\.png$/i);
+    if (m) markProviderIconMissing(m[1]);
+    setFailedIcons((f) => ({ ...f, [id]: true }));
+  };
 
-  // Stable key — only remount when provider list changes
-  const providersKey = useMemo(
-    () => providers.map((p) => p.provider).sort().join(","),
-    [providers]
-  );
-
-  const rfInstance = useRef(null);
-  const containerRef = useRef(null);
-  const fitOpts = { padding: 0.2, duration: 200 };
-  const onInit = useCallback((instance) => {
-    rfInstance.current = instance;
-    setTimeout(() => instance.fitView(fitOpts), 50);
-  }, []);
-
-  // Re-fit on container resize
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Re-fit when node count/layout changes
-  useEffect(() => {
-    if (rfInstance.current) {
-      const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
-      return () => clearTimeout(id);
-    }
-  }, [nodes.length]);
+  const layout = useMemo(() => buildLayout(providers), [providers]);
+  const stateOf = (id) => {
+    const k = id?.toLowerCase();
+    if (activeSet.has(k)) return "active";
+    if (errorKey === k) return "error";
+    if (lastKey === k) return "last";
+    return "idle";
+  };
+  const busy = activeSet.size > 0;
+  const { nodes, width, height, cx, cy } = layout;
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-muted/30 sm:h-[480px]">
-      {providers.length === 0 ? (
-        <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-          No providers connected
-        </div>
-      ) : (
-        <ReactFlow
-          key={providersKey}
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          fitView
-          fitViewOptions={fitOpts}
-          minZoom={0.1}
-          maxZoom={2}
-          onInit={onInit}
-          proOptions={{ hideAttribution: true }}
-          panOnDrag
-          zoomOnScroll
-          zoomOnPinch
-          zoomOnDoubleClick
-          preventScrolling={false}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-        >
-          <Controls showInteractive={false} className="react-flow-controls-custom" />
-        </ReactFlow>
-      )}
+    <div className="pt-graph flex min-w-0 flex-col rounded-lg border border-border bg-muted/30 p-3">
+      <header className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="text-primary">
+          <path d="M8 8.4 3.2 4M8 8.4l5-4.2M8 8.4l4.4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.5" />
+          <circle cx="8" cy="8.4" r="2.4" fill="currentColor" />
+          <circle cx="3.2" cy="4" r="1.6" fill="currentColor" />
+          <circle cx="13" cy="4.2" r="1.6" fill="currentColor" />
+          <circle cx="12.4" cy="12.4" r="1.6" fill="currentColor" />
+        </svg>
+        <span className="text-sm font-medium text-text-main">Provider topology</span>
+        <span className="ml-auto flex gap-3 tabular-nums text-text-muted">
+          <span><b className="font-medium text-text-main">{providers.length}</b> providers</span>
+          <span><b className="font-medium text-text-main">{activeSet.size}</b> active</span>
+          {errorKey && <span className="font-medium text-danger">error: {errorKey}</span>}
+        </span>
+      </header>
+      <div className="relative flex min-h-[280px] flex-1 items-center justify-center overflow-hidden rounded-[10px] bg-surface shadow-[0_0_0_0.5px_var(--color-border)]">
+        {providers.length === 0 ? (
+          <span className="text-sm text-text-muted">No providers connected</span>
+        ) : (
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="block h-auto max-h-[480px] w-full"
+            role="img"
+            aria-label={`Provider topology: ${providers.length} providers, ${activeSet.size} active`}
+          >
+            <defs>
+              <radialGradient id="pt-glow">
+                <stop offset="0" stopColor="var(--color-primary)" stopOpacity="0.18" />
+                <stop offset="1" stopColor="var(--color-primary)" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <ellipse className="pt-halo" data-on={busy || undefined} cx={cx} cy={cy} rx={width * 0.22} ry={ROW * 0.9} fill="url(#pt-glow)" />
+            <g>
+              {/* Idle first so highlighted links aren't painted over on the shared trunk */}
+              {[...nodes].sort((a, b) => (stateOf(a.p.provider) !== "idle") - (stateOf(b.p.provider) !== "idle")).map((n) => (
+                <path key={n.p.provider} className="pt-edge" data-status={stateOf(n.p.provider)} d={n.path} pathLength="1" />
+              ))}
+            </g>
+            <g>
+              {nodes.filter((n) => stateOf(n.p.provider) === "active").map((n, i) => (
+                <g key={n.p.provider} style={{ "--pt-delay": `${i * 180}ms` }}>
+                  <path className="pt-pulse pt-pulse-glow" d={n.path} pathLength="1" />
+                  <path className="pt-pulse" d={n.path} pathLength="1" />
+                  <path className="pt-pulse pt-pulse-res" d={n.path} pathLength="1" />
+                </g>
+              ))}
+            </g>
+            {nodes.map((n) => (
+              <ProviderDisc
+                key={n.p.provider}
+                node={n}
+                state={stateOf(n.p.provider)}
+                onIconError={onIconError}
+                iconFailed={!!failedIcons[n.p.provider]}
+              />
+            ))}
+            <g className="pt-node pt-hub" data-status={busy ? "active" : "idle"} transform={`translate(${cx} ${cy})`}>
+              <title>{`9Router · ${activeSet.size} active`}</title>
+              {busy && <circle className="pt-ring" r={HUB_D / 2} />}
+              <circle className="pt-disc" r={HUB_D / 2} />
+              <image href="/favicon.svg" x={-13} y={-13} width={26} height={26} />
+              <text className="pt-name pt-hub-name" y={HUB_D / 2 + 16}>9Router</text>
+              {busy && (
+                <g transform={`translate(${HUB_D * 0.36} ${-HUB_D * 0.36})`}>
+                  <circle className="pt-count" r={9} />
+                  <text className="pt-count-text" dy="0.35em">{activeSet.size}</text>
+                </g>
+              )}
+            </g>
+          </svg>
+        )}
+      </div>
     </div>
   );
 }

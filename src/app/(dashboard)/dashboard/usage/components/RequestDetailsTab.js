@@ -55,11 +55,11 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
   return (
-    <div className="border border-black/5 dark:border-white/5 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button 
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-3 bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
+        className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50"
       >
         <div className="flex items-center gap-2">
           {icon && <span className="material-symbols-outlined text-[18px] text-muted-foreground">{icon}</span>}
@@ -74,7 +74,7 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
       </button>
       
       {isOpen && (
-        <div className="p-4 border-t border-black/5 dark:border-white/5">
+        <div className="p-4 border-t border-border">
           {children}
         </div>
       )}
@@ -180,8 +180,8 @@ export default function RequestDetailsTab() {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <Card padding="md">
+    <div className="flex min-w-0 flex-col gap-4">
+      <Card padding="sm">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-foreground">Provider</label>
@@ -190,8 +190,8 @@ export default function RequestDetailsTab() {
               value={filters.provider}
               onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
               className={cn(
-                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-card",
-                "text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "h-9 px-3 rounded-lg border border-border bg-card",
+                "text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50",
                 "w-full min-w-0 cursor-pointer"
               )}
               style={{ colorScheme: 'auto' }}
@@ -213,8 +213,8 @@ export default function RequestDetailsTab() {
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
               className={cn(
-                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-card",
-                "w-full min-w-0 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                "h-9 px-3 rounded-lg border border-border bg-card",
+                "w-full min-w-0 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
               )}
             />
           </div>
@@ -227,8 +227,8 @@ export default function RequestDetailsTab() {
               value={filters.endDate}
               onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
               className={cn(
-                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-card",
-                "w-full min-w-0 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                "h-9 px-3 rounded-lg border border-border bg-card",
+                "w-full min-w-0 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
               )}
             />
           </div>
@@ -249,76 +249,77 @@ export default function RequestDetailsTab() {
 
       <Card padding="none">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px]">
+          <table className="w-full min-w-[880px] tabular-nums">
             <thead>
-              <tr className="border-b border-black/5 dark:border-white/5">
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Timestamp</th>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Model</th>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Provider</th>
-                <th className="text-right p-4 text-sm font-semibold text-foreground">Input Tokens</th>
-                <th className="text-right p-4 text-sm font-semibold text-foreground">Cached</th>
-                <th className="text-right p-4 text-sm font-semibold text-foreground">Cache Creation</th>
-                <th className="text-right p-4 text-sm font-semibold text-foreground">Output Tokens</th>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Latency</th>
-                <th className="text-center p-4 text-sm font-semibold text-foreground">Action</th>
+              <tr className="border-b border-border">
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-left text-[13px] font-medium text-muted-foreground">Timestamp</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-left text-[13px] font-medium text-muted-foreground">Model</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-left text-[13px] font-medium text-muted-foreground">Provider</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-right text-[13px] font-medium text-muted-foreground">Input Tokens</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-right text-[13px] font-medium text-muted-foreground">Cached</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-right text-[13px] font-medium text-muted-foreground">Cache Creation</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-right text-[13px] font-medium text-muted-foreground">Output Tokens</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-left text-[13px] font-medium text-muted-foreground">Latency</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-2 text-center text-[13px] font-medium text-muted-foreground">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-12 text-sm text-center text-muted-foreground">
                     <div className="flex items-center justify-center gap-2">
-                      <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+                      <span className="material-symbols-outlined animate-spin motion-reduce:animate-none text-[20px]">progress_activity</span>
                       Loading...
                     </div>
                   </td>
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-muted-foreground">
-                    No request details found
+                  <td colSpan={9} className="px-4 py-12 text-sm text-center text-muted-foreground">
+                    No requests match these filters
                   </td>
                 </tr>
               ) : (
                 details.map((detail, index) => (
                   <tr
                     key={`${detail.id}-${index}`}
-                    className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                    className="border-b border-border last:border-b-0 hover:bg-muted/40"
                   >
-                    <td className="whitespace-nowrap p-4 text-sm text-foreground">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-sm text-foreground">
                       {new Date(detail.timestamp).toLocaleString()}
                     </td>
-                    <td className="max-w-[260px] truncate p-4 font-mono text-sm text-foreground">
+                    <td className="max-w-[260px] truncate px-4 py-2.5 font-mono text-sm text-foreground">
                       {detail.model}
                     </td>
-                    <td className="max-w-[180px] truncate p-4 text-sm text-foreground">
+                    <td className="max-w-[180px] truncate px-4 py-2.5 text-sm text-foreground">
                        <span className="font-medium">
                          {getProviderName(detail.provider, providerNameCache)}
                        </span>
                      </td>
-                    <td className="p-4 text-sm text-foreground text-right font-mono">
+                    <td className="px-4 py-2.5 text-sm text-foreground text-right">
                       {getInputTokens(detail.tokens).toLocaleString()}
                     </td>
-                    <td className="p-4 text-sm text-foreground text-right font-mono">
+                    <td className="px-4 py-2.5 text-sm text-foreground text-right">
                       {getCachedTokens(detail.tokens) > 0 ? getCachedTokens(detail.tokens).toLocaleString() : "—"}
                     </td>
-                    <td className="p-4 text-sm text-foreground text-right font-mono">
+                    <td className="px-4 py-2.5 text-sm text-foreground text-right">
                       {getCacheCreationTokens(detail.tokens) > 0 ? getCacheCreationTokens(detail.tokens).toLocaleString() : "—"}
                     </td>
-                    <td className="p-4 text-sm text-foreground text-right font-mono">
+                    <td className="px-4 py-2.5 text-sm text-foreground text-right">
                       {detail.tokens?.completion_tokens?.toLocaleString() || 0}
                     </td>
-                    <td className="p-4 text-sm text-muted-foreground">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
                       <div className="flex flex-col gap-0.5">
-                        <div>TTFT: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
-                        <div>Total: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
+                        <div>TTFT <span className="text-foreground">{detail.latency?.ttft || 0}ms</span></div>
+                        <div>Total <span className="text-foreground">{detail.latency?.total || 0}ms</span></div>
                       </div>
                     </td>
-                    <td className="p-4 text-center">
+                    <td className="px-4 py-2.5 text-center">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleViewDetail(detail)}
+                        aria-label={`Detail: ${detail.model}, ${new Date(detail.timestamp).toLocaleString()}`}
                       >
                         Detail
                       </Button>
@@ -331,7 +332,7 @@ export default function RequestDetailsTab() {
         </div>
 
         {!loading && details.length > 0 && (
-          <div className="border-t border-black/5 dark:border-white/5">
+          <div className="border-t border-border">
             <Pagination
               currentPage={pagination.page}
               pageSize={pagination.pageSize}
@@ -372,7 +373,7 @@ export default function RequestDetailsTab() {
                 <span className="text-muted-foreground">Status:</span>{" "}
                 <span className={cn(
                   "font-medium",
-                  selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
+                  selectedDetail.status === "success" ? "text-success" : "text-danger"
                 )}>
                   {selectedDetail.status}
                 </span>
@@ -414,15 +415,15 @@ export default function RequestDetailsTab() {
             </div>
 
             {selectedDetail.pxpipe && (
-              <div className="rounded-lg border border-black/5 dark:border-white/5 p-4">
+              <div className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="material-symbols-outlined text-[18px] text-muted-foreground">image</span>
-                  <span className="font-semibold text-sm text-foreground">PXPIPE</span>
+                  <span className="text-sm font-semibold text-foreground">PXPIPE</span>
                   <span className={cn(
                     "text-xs px-2 py-0.5 rounded",
                     selectedDetail.pxpipe.applied
-                      ? "bg-green-500/15 text-green-600"
-                      : "bg-amber-500/15 text-amber-600"
+                      ? "bg-success/15 text-success"
+                      : "bg-warning/15 text-warning"
                   )}>
                     {selectedDetail.pxpipe.applied ? "Activated" : "Skipped"}
                   </span>
@@ -439,7 +440,7 @@ export default function RequestDetailsTab() {
                     </div>
                     <div>
                       <span className="text-muted-foreground block text-xs">Saved</span>
-                      <span className="font-mono text-green-600">{selectedDetail.pxpipe.savedPct || 0}%</span>
+                      <span className="text-success">{selectedDetail.pxpipe.savedPct || 0}%</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground block text-xs">Images</span>
@@ -457,14 +458,14 @@ export default function RequestDetailsTab() {
 
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-foreground dark:border-white/5 dark:bg-white/5 sm:p-4">
+                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
                   {JSON.stringify(selectedDetail.request, null, 2)}
                 </pre>
               </CollapsibleSection>
 
               {selectedDetail.providerRequest && (
                 <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-foreground dark:border-white/5 dark:bg-white/5 sm:p-4">
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
                     {JSON.stringify(selectedDetail.providerRequest, null, 2)}
                   </pre>
                 </CollapsibleSection>
@@ -472,7 +473,7 @@ export default function RequestDetailsTab() {
 
               {selectedDetail.providerResponse && (
                 <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-foreground dark:border-white/5 dark:bg-white/5 sm:p-4">
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
                     {typeof selectedDetail.providerResponse === 'object'
                       ? JSON.stringify(selectedDetail.providerResponse, null, 2)
                       : selectedDetail.providerResponse
@@ -488,7 +489,7 @@ export default function RequestDetailsTab() {
                       <span className="material-symbols-outlined text-[16px]">psychology</span>
                       Thinking Process
                     </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
+                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-warning/30 bg-warning/10 p-3 font-mono text-xs text-foreground sm:p-4">
                       {selectedDetail.response.thinking}
                     </pre>
                   </div>
@@ -497,7 +498,7 @@ export default function RequestDetailsTab() {
                 <h4 className="font-semibold text-foreground mb-2 text-xs uppercase tracking-wide opacity-70">
                   Content
                 </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-foreground dark:border-white/5 dark:bg-white/5 sm:p-4">
+                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
                   {selectedDetail.response?.content || "[No content]"}
                 </pre>
               </CollapsibleSection>
