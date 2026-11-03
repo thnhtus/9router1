@@ -12,11 +12,11 @@ export default function SmartPolicyModal({
   onClose,
   comboName,
   currentPolicy = "smart",
-  currentThreshold = 80,
+  currentThreshold = 70,
   onSave,
 }) {
   const [selectedPolicy, setSelectedPolicy] = useState("smart");
-  const [threshold, setThreshold] = useState(80);
+  const [threshold, setThreshold] = useState(70);
 
   useEffect(() => {
     if (isOpen) {
@@ -25,8 +25,8 @@ export default function SmartPolicyModal({
         initialPolicy = "smart";
       }
       setSelectedPolicy(initialPolicy);
-      const parsedThresh = Math.round((currentThreshold || 0.8) * (currentThreshold <= 1 ? 100 : 1));
-      setThreshold(parsedThresh || 80);
+      const parsedThresh = Math.round((currentThreshold || 0.7) * (currentThreshold <= 1 ? 100 : 1));
+      setThreshold(parsedThresh || 70);
     }
   }, [isOpen, currentPolicy, currentThreshold]);
 
@@ -34,7 +34,7 @@ export default function SmartPolicyModal({
     const finalThreshold = selectedPolicy === "custom"
       ? threshold / 100
       : selectedPolicy === "smart"
-        ? 0.8
+        ? 0.7
         : 0;
 
     onSave({
@@ -49,11 +49,11 @@ export default function SmartPolicyModal({
     {
       id: "smart",
       title: "Smart Switch",
-      badge: "Adaptive ≥80%",
+      badge: "Adaptive ≥70%",
       badgeVariant: "success",
       icon: "auto_mode",
       recommended: true,
-      desc: "Preserves warm prompt cache across turns. Seamlessly switches models if the conversation topic shifts with high confidence (≥80%).",
+      desc: "Preserves warm prompt cache across turns. Seamlessly switches models if the conversation topic shifts with high confidence (≥70%).",
     },
     {
       id: "strict",

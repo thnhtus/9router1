@@ -28,8 +28,8 @@ export async function GET() {
         return {
           id, provider: m.provider, name: m.name || m.model,
           stats: entry, tier: costTier(id, entry),
-          suggestedRole: suggestRole(entry), role: roles[id] || "",
-          profile: buildProfile(id, entry, roles[id]),
+          suggestedRole: suggestRole(entry, catalog?.models), role: roles[id] || "",
+          profile: buildProfile(id, entry, roles[id], catalog?.models),
         };
       });
     return NextResponse.json({

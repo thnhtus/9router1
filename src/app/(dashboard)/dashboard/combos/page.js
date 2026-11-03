@@ -60,10 +60,10 @@ function getPolicyBadgeLabel(strategy = {}) {
   if (policy === "per-turn") return "Per-Turn";
   if (policy === "custom") {
     const raw = strategy.confidenceThreshold;
-    const pct = Math.round((raw || 0.8) * (raw && raw <= 1 ? 100 : 1));
-    return `Custom (≥${pct || 80}%)`;
+    const pct = Math.round((raw || 0.7) * (raw && raw <= 1 ? 100 : 1));
+    return `Custom (≥${pct || 70}%)`;
   }
-  return "Smart (≥80%)";
+  return "Smart (≥70%)";
 }
 
 export default function CombosPage() {
@@ -870,7 +870,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           onClose={() => setShowPolicyModal(false)}
           comboName={combo.name}
           currentPolicy={strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart")}
-          currentThreshold={strategy.confidenceThreshold ?? 80}
+          currentThreshold={strategy.confidenceThreshold ?? 70}
           onSave={onSetStrategy}
         />
       )}

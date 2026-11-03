@@ -1,7 +1,8 @@
 import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { getRoutingProfiles } from "@/lib/llmStats.js";
+import { createHash } from "node:crypto";
+import { getRoutingProfiles, getModelTiers } from "@/lib/llmStats.js";
 import { appendJevLog } from "@/lib/jevLogs.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import {
@@ -10,7 +11,17 @@ import {
   extractPromptState,
   buildChoiceCriteria,
   parseSystemOneRouteAnswer,
+  groupRouteByTier,
 } from "open-sse/services/systemoneRouter.js";
+
+// Same prompt + same candidates → same decision; skip the Jev round trip.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX = 500;
+const routeCache = new Map();
+
+function cacheKey(body, models) {
+  return createHash("sha256").update(JSON.stringify([extractPromptState(body), models])).digest("hex");
+}
 
 /**
  * Dispatch an in-process System One decision evaluation for a combo request.
@@ -30,11 +41,20 @@ import {
  */
 export async function resolveSmartChoice(opts) {
   if (!Array.isArray(opts?.models) || opts.models.length <= 1) return null;
+  const key = cacheKey(opts.body, opts.models);
+  const hit = routeCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.route;
+
   const trace = { comboName: opts.comboName || null, models: opts.models };
   const started = Date.now();
   let route = null;
   try {
     route = await evaluate(opts, trace);
+    if (route) {
+      route = groupRouteByTier(route, await getModelTiers(opts.models));
+      if (routeCache.size >= CACHE_MAX) routeCache.delete(routeCache.keys().next().value);
+      routeCache.set(key, { route, at: Date.now() });
+    }
     return route;
   } finally {
     // Per-request audit trail for the Jev Router page; never blocks or breaks routing.

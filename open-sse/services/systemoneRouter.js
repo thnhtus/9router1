@@ -6,6 +6,9 @@
 
 export const DEFAULT_SYSTEMONE_ROUTER_MODEL = "oc/jev-1.13-free";
 export const DEFAULT_SYSTEMONE_TIMEOUT_MS = 8000;
+// How long a request waits for Jev before routing by sticky/default order; a late answer
+// still lands in the session sticky for the next turn.
+export const SMART_WAIT_MS = 400;
 export const MAX_STATE_CHARS = 2000;
 export const MAX_STICKY_SESSIONS = 5000;
 export const STICKY_SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -129,6 +132,28 @@ export function parseSystemOneRouteAnswer(json) {
     confidence,
     probabilities,
   };
+}
+
+/**
+ * Collapse a route onto cost tiers: near-duplicate models (sonnet-5 vs sonnet-5-5) split
+ * Jev's probability mass, so per-model confidence stays ~0.5 even when the tier is clear.
+ * Picks the tier with the highest summed probability, the best model inside it, and
+ * reports the tier sum as confidence plus `peers` (all models of that tier).
+ * Models with no known tier stay their own group.
+ *
+ * @param {object|null} route - Parsed route ({ choice, confidence, probabilities })
+ * @param {Record<string,string>} tiers - model → "free"|"cheap"|"mid"|"premium"|"unknown"
+ */
+export function groupRouteByTier(route, tiers) {
+  const probs = route?.probabilities;
+  if (!probs || !tiers || Object.keys(probs).length === 0) return route;
+  const groupOf = (m) => (tiers[m] && tiers[m] !== "unknown" ? tiers[m] : m);
+  const sums = {};
+  for (const [m, p] of Object.entries(probs)) sums[groupOf(m)] = (sums[groupOf(m)] || 0) + p;
+  const tier = Object.keys(sums).reduce((a, b) => (sums[b] > sums[a] ? b : a));
+  const peers = Object.keys(probs).filter((m) => groupOf(m) === tier);
+  const choice = peers.includes(route.choice) ? route.choice : peers.reduce((a, b) => (probs[b] > probs[a] ? b : a));
+  return { ...route, choice, confidence: Math.min(1, Math.round(sums[tier] * 100) / 100), peers, tier };
 }
 
 /**

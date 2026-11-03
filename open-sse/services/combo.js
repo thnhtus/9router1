@@ -13,7 +13,23 @@ import {
   setStickyComboModel,
   clearStickyComboSession,
   orderModelsByChoice,
+  SMART_WAIT_MS,
 } from "./systemoneRouter.js";
+
+const LATE = Symbol("late");
+
+// Wait at most waitMs for Jev so routing never blocks the request on it.
+// A late answer goes to onLate (to update the session sticky for the next turn).
+function raceSmartChoice(promise, onLate, waitMs = SMART_WAIT_MS) {
+  let timer;
+  const timeout = new Promise((res) => { timer = setTimeout(() => res(LATE), waitMs); });
+  return Promise.race([promise, timeout]).then((r) => {
+    clearTimeout(timer);
+    if (r !== LATE) return r;
+    promise.then(onLate, () => {});
+    return null;
+  }, (err) => { clearTimeout(timer); throw err; });
+}
 
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
 // them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
@@ -347,7 +363,8 @@ export function isZeroContentResponse(data) {
  * @param {string|null} [options.sessionId=null] - Client session identifier for prompt cache retention
  * @param {string} [options.smartPolicy="smart"] - Policy: "smart" (adaptive ≥80%), "strict" (lock 1st model), "per-turn", or "custom"
  * @param {boolean} [options.sessionSticky=true] - Keep chosen model across session requests to retain prompt cache
- * @param {number} [options.confidenceThreshold=0.8] - Minimum confidence required for model switch (0-1)
+ * @param {number} [options.confidenceThreshold=0.7] - Minimum (tier-grouped) confidence required for model switch (0-1)
+ * @param {number} [options.smartWaitMs=SMART_WAIT_MS] - Max wait for the router before using sticky/default order
  * @param {Function|null} [options.resolveSmartChoice=null] - Smart router resolver callback: (body, models) => Promise<{ choice, probabilities, confidence } | null>
  * @returns {Promise<Response>}
  */
@@ -363,8 +380,9 @@ export async function handleComboChat({
   sessionId = null,
   smartPolicy = "smart",
   sessionSticky = true,
-  confidenceThreshold = 0.8,
+  confidenceThreshold = 0.7,
   resolveSmartChoice = null,
+  smartWaitMs = SMART_WAIT_MS,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
@@ -374,7 +392,7 @@ export async function handleComboChat({
     const isPerTurn = policy === "per-turn" || sessionSticky === false;
     const isStrict = policy === "strict";
 
-    let switchThreshold = 0.8;
+    let switchThreshold = 0.7;
     if (policy === "custom") {
       const custom = Number(confidenceThreshold);
       if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
@@ -389,6 +407,17 @@ export async function handleComboChat({
       activeStickyModel = getStickyComboModel(comboName, sessionId, models);
     }
 
+    // Late Jev answer: remember it for this session's next turn (unless the current
+    // sticky model is already in the chosen tier — keep its warm prompt cache).
+    const onLate = (r) => {
+      if (isPerTurn || !sessionId || !r?.choice || !models.includes(r.choice)) return;
+      if (typeof r.confidence !== "number" || r.confidence < switchThreshold) return;
+      const current = getStickyComboModel(comboName, sessionId, models);
+      if (current === r.choice || (r.peers || []).includes(current)) return;
+      setStickyComboModel(comboName, sessionId, r.choice);
+      log.info("COMBO", `smart-router late decision → ${r.choice} for next turn (confidence: ${r.confidence})`);
+    };
+
     if (activeStickyModel) {
       if (isStrict) {
         // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
@@ -397,11 +426,12 @@ export async function handleComboChat({
       } else if (typeof resolveSmartChoice === "function") {
         // Smart Switch (Adaptive): check if the user's task drastically shifted
         try {
-          const smartResult = await resolveSmartChoice(body, models);
+          const smartResult = await raceSmartChoice(resolveSmartChoice(body, models), onLate, smartWaitMs);
           const newChoice = smartResult?.choice;
           const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
+          const sameTier = (smartResult?.peers || []).includes(activeStickyModel);
 
-          if (newChoice && newChoice !== activeStickyModel && models.includes(newChoice) && conf !== null && conf >= switchThreshold) {
+          if (newChoice && newChoice !== activeStickyModel && !sameTier && models.includes(newChoice) && conf !== null && conf >= switchThreshold) {
             // Task changed with high confidence: switch model and update session
             rotatedModels = orderModelsByChoice(models, smartResult);
             log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${newChoice} (confidence: ${conf} >= ${switchThreshold})`);
@@ -425,7 +455,7 @@ export async function handleComboChat({
     } else if (typeof resolveSmartChoice === "function") {
       // Turn 1 or per-turn: evaluate System One to select initial model
       try {
-        const smartResult = await resolveSmartChoice(body, models);
+        const smartResult = await raceSmartChoice(resolveSmartChoice(body, models), onLate, smartWaitMs);
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
 
         if (smartResult?.choice && models.includes(smartResult.choice)) {

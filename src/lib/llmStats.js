@@ -160,19 +160,46 @@ export function costTier(modelId, entry) {
   return "premium";
 }
 
-export function suggestRole(entry) {
-  const scores = Object.entries(entry?.scores || {});
-  if (!scores.length) return "general";
-  return scores.sort((a, b) => b[1] - a[1])[0][0];
+// Raw scores mix scales (productivity 1822 next to science 0.9), so Jev can't compare them.
+// Rank each score against every catalog model in that category instead.
+const MIN_CATEGORY_SIZE = 20; // smaller categories give noisy ranks
+const rankCache = new WeakMap();
+
+function categoryValues(catalog) {
+  if (!Array.isArray(catalog)) return {};
+  let by = rankCache.get(catalog);
+  if (!by) {
+    by = {};
+    for (const e of catalog) for (const [k, v] of Object.entries(e?.scores || {})) if (Number.isFinite(v)) (by[k] ??= []).push(v);
+    rankCache.set(catalog, by);
+  }
+  return by;
 }
 
-/** One line Jev reads per model: role, cost tier, price, top scores. */
-export function buildProfile(modelId, entry, role) {
+/** [[category, topPercent]] best first, e.g. [["reasoning", 3], ...] ("top 3%"). */
+export function scoreRanks(entry, catalog) {
+  const by = categoryValues(catalog);
+  const out = [];
+  for (const [k, v] of Object.entries(entry?.scores || {})) {
+    const vals = by[k];
+    if (!Number.isFinite(v) || !vals || vals.length < MIN_CATEGORY_SIZE) continue;
+    const above = vals.filter((x) => x > v).length;
+    out.push([k, Math.max(1, Math.ceil(((above + 1) / vals.length) * 100))]);
+  }
+  return out.sort((a, b) => a[1] - b[1]);
+}
+
+export function suggestRole(entry, catalog) {
+  return scoreRanks(entry, catalog)[0]?.[0] || "general";
+}
+
+/** One line Jev reads per model: role (only when set by the user), cost tier, price, category ranks. */
+export function buildProfile(modelId, entry, role, catalog) {
   const tier = costTier(modelId, entry);
-  const parts = [`role: ${role || suggestRole(entry)}`, `cost: ${tier}`];
+  const parts = role ? [`role: ${role}`, `cost: ${tier}`] : [`cost: ${tier}`];
   if (tier !== "free" && entry?.inPrice != null) parts.push(`price $${entry.inPrice}/$${entry.outPrice ?? "?"} per 1M in/out`);
-  const top = Object.entries(entry?.scores || {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  if (top.length) parts.push(`scores ${top.map(([k, v]) => `${k} ${Math.round(v * 10) / 10}`).join(", ")}`);
+  const top = scoreRanks(entry, catalog).slice(0, 4);
+  if (top.length) parts.push(`rank ${top.map(([k, p]) => `${k} top ${p}%`).join(", ")}`);
   return parts.join("; ");
 }
 
@@ -201,6 +228,16 @@ export const writeRoles = (roles) => kvSet("roles", roles);
  * Jev choice criteria for a combo: model → profile line, or null when nothing is known
  * (Jev then falls back to its own knowledge of the model). Never throws.
  */
+/** { model: cost tier } for grouping Jev's probabilities; "unknown" when uncatalogued. */
+export async function getModelTiers(models) {
+  const out = {};
+  try {
+    const catalog = await readCatalog();
+    for (const m of models) out[m] = costTier(m, catalog?.models ? matchCatalog(m, catalog.models) : null);
+  } catch { /* fail open: no grouping */ }
+  return out;
+}
+
 export async function getRoutingProfiles(models) {
   const out = {};
   for (const m of models) if (typeof m === "string" && m.trim()) out[m.trim()] = null;
@@ -208,7 +245,7 @@ export async function getRoutingProfiles(models) {
     const [catalog, roles] = await Promise.all([readCatalog(), readRoles()]);
     for (const m of Object.keys(out)) {
       const entry = catalog?.models ? matchCatalog(m, catalog.models) : null;
-      if (entry || roles[m] || isFreeModel(m)) out[m] = buildProfile(m, entry, roles[m]);
+      if (entry || roles[m] || isFreeModel(m)) out[m] = buildProfile(m, entry, roles[m], catalog.models);
     }
   } catch { /* fail open: bare criteria */ }
   return out;
