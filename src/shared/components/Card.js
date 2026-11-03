@@ -26,9 +26,9 @@ export default function Card({
     <div
       data-slot="card"
       className={cn(
-        "rounded-xl bg-card text-card-foreground ring-1 ring-foreground/10",
+        "rounded-xl border border-black/[0.06] bg-card text-card-foreground shadow-soft dark:border-white/[0.07]",
         elev && "shadow-[var(--shadow-elev)]",
-        hover && "cursor-pointer transition-all hover:ring-primary/30 hover:shadow-[var(--shadow-warm)]",
+        hover && "cursor-pointer transition-all hover:border-primary/30 hover:shadow-[var(--shadow-warm)]",
         paddings[padding],
         className
       )}

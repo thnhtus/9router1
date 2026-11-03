@@ -408,7 +408,7 @@ export default function ProvidersPage() {
     anthropicCompatibleProviders.length > 0;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-6">
       {loadError && <ErrorState message="Couldn't load data. Check that the 9Router server is running, then retry." onRetry={() => setReloadKey((k) => k + 1)} />}
       <div className="flex items-center justify-end">
         <select

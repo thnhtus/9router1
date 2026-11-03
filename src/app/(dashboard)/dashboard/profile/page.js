@@ -764,7 +764,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-0">
+    <div className="max-w-2xl mx-auto">
       <div className="flex flex-col gap-6">
         {/* Local Mode Info */}
         <Card>
