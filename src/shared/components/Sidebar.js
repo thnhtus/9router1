@@ -11,6 +11,22 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
+import {
+  Sidebar as UISidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarRail,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
@@ -41,9 +57,11 @@ const systemItems = [
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
 
-export default function Sidebar({ onClose }) {
+export default function Sidebar() {
   const pathname = usePathname();
-  const [mediaOpen, setMediaOpen] = useState(false);
+  const { isMobile, setOpenMobile } = useSidebar();
+  const closeMobile = () => isMobile && setOpenMobile(false);
+  const [mediaOpen, setMediaOpen] = useState(() => pathname.startsWith("/dashboard/media-providers"));
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -110,31 +128,49 @@ export default function Sidebar({ onClose }) {
   // user runs the command manually in another terminal.
 
 
+  const item = (href, label, icon, { active = isActive(href), external = false, badge } = {}) => (
+    <SidebarMenuItem key={href}>
+      <SidebarMenuButton
+        isActive={active}
+        tooltip={label}
+        render={external ? <a href={href} target="_blank" rel="noreferrer" /> : <Link href={href} onClick={closeMobile} />}
+      >
+        <span className={cn("material-symbols-outlined text-[18px]", active && "fill-1")}>{icon}</span>
+        <span>{label}</span>
+      </SidebarMenuButton>
+      {badge && <SidebarMenuBadge className="text-[10px] font-semibold text-orange-400">{badge}</SidebarMenuBadge>}
+    </SidebarMenuItem>
+  );
+  const mediaActive = pathname.startsWith("/dashboard/media-providers");
+  const mediaItems = [
+    ...MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((k) => ({ ...k, href: `/dashboard/media-providers/${k.id}` })),
+    COMBINED_WEB_ITEM,
+  ];
+
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-border/60 bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full">
-        {/* Traffic lights */}
-        <div className="flex items-center gap-2 px-6 pt-5 pb-2">
-          <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-          <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-          <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-        </div>
-
-        {/* Logo */}
-        <div className="px-6 py-4 flex flex-col gap-2">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-primary to-primary/70 shadow-[var(--shadow-warm)]">
-              <span className="material-symbols-outlined text-white text-[20px]">hub</span>
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                {APP_CONFIG.name}
-              </h1>
-              <span className="text-xs text-muted-foreground">v{APP_CONFIG.version}</span>
-            </div>
-          </Link>
+      <UISidebar collapsible="icon">
+        <SidebarHeader className="gap-3 px-3 pt-4">
+          <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:hidden" aria-hidden="true">
+            <div className="size-3 rounded-full bg-[#FF5F56]" />
+            <div className="size-3 rounded-full bg-[#FFBD2E]" />
+            <div className="size-3 rounded-full bg-[#27C93F]" />
+          </div>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" tooltip={APP_CONFIG.name} render={<Link href="/dashboard" onClick={closeMobile} />}>
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-white">
+                  <span className="material-symbols-outlined text-[18px]">hub</span>
+                </div>
+                <div className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate font-semibold tracking-tight">{APP_CONFIG.name}</span>
+                  <span className="text-xs text-sidebar-foreground/50">v{APP_CONFIG.version}</span>
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           {updateInfo && (
-            <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
+            <div className="flex flex-col gap-1.5 px-2 group-data-[collapsible=icon]:hidden">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
@@ -157,206 +193,47 @@ export default function Sidebar({ onClose }) {
               </div>
             </div>
           )}
-        </div>
+        </SidebarHeader>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+        <SidebarContent className="custom-scrollbar">
+          <SidebarGroup>
+            <SidebarMenu>{navItems.map((i) => item(i.href, i.label, i.icon))}</SidebarMenu>
+          </SidebarGroup>
+
+          <SidebarGroup>
+            <SidebarGroupLabel className="uppercase tracking-wider text-sidebar-foreground/40">System</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={mediaActive} tooltip="Media Providers" aria-expanded={mediaOpen} onClick={() => setMediaOpen((v) => !v)}>
+                  <span className="material-symbols-outlined text-[18px]">perm_media</span>
+                  <span>Media Providers</span>
+                  <span className={cn("material-symbols-outlined ml-auto text-[16px] transition-transform", mediaOpen && "rotate-180")}>expand_more</span>
+                </SidebarMenuButton>
+                {mediaOpen && (
+                  <SidebarMenuSub>
+                    {mediaItems.map((k) => (
+                      <SidebarMenuSubItem key={k.id}>
+                        <SidebarMenuSubButton isActive={pathname.startsWith(k.href)} render={<Link href={k.href} onClick={closeMobile} />}>
+                          <span className="material-symbols-outlined text-[16px]">{k.icon}</span>
+                          <span>{k.label}</span>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ))}
+                  </SidebarMenuSub>
                 )}
-              >
-                {item.icon}
-              </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
-            </Link>
-          ))}
-
-          {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider mb-2">
-              System
-            </p>
-
-            {/* Media Providers accordion */}
-            <button
-              onClick={() => setMediaOpen((v) => !v)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                pathname.startsWith("/dashboard/media-providers")
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
-              <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                expand_more
-              </span>
-            </button>
-            {mediaOpen && (
-              <div className="pl-4">
-                {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
-                  <Link
-                    key={kind.id}
-                    href={`/dashboard/media-providers/${kind.id}`}
-                    onClick={onClose}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                      pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
-                    <span className="text-sm">{kind.label}</span>
-                  </Link>
-                ))}
-                <Link
-                  key={COMBINED_WEB_ITEM.id}
-                  href={COMBINED_WEB_ITEM.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                    pathname.startsWith(COMBINED_WEB_ITEM.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
-                  <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
-                </Link>
-              </div>
-            )}
-
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
-            ))}
-
-            {/* Debug items (inside System section, before Settings) */}
-            {debugItems.map((item) => {
-              const show = item.href !== "/dashboard/translator" || enableTranslator;
-              return show ? (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                    isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-[13px] font-medium">{item.label}</span>
-                </Link>
-              ) : null;
-            })}
-
-            {/* Remote */}
-            <a
-              href="https://9remote.cc"
-              target="_blank"
-              rel="noreferrer"
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                computer
-              </span>
-              <span className="text-[13px] font-medium">9Remote</span>
-              <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px] bg-orange-500/15 text-orange-400">
-                HOT
-              </span>
-            </a>
-
-            {/* 9English */}
-            <a
-              href="https://9english.net/"
-              target="_blank"
-              rel="noreferrer"
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                translate
-              </span>
-              <span className="text-[13px] font-medium">9English</span>
-            </a>
-
-            {/* Settings */}
-            <Link
-              href="/dashboard/profile"
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive("/dashboard/profile")
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                settings
-              </span>
-              <span className="text-[13px] font-medium">Settings</span>
-            </Link>
-          </div>
-        </nav>
-
-      </aside>
-
+              </SidebarMenuItem>
+              {systemItems.map((i) => item(i.href, i.label, i.icon))}
+              {debugItems
+                .filter((i) => i.href !== "/dashboard/translator" || enableTranslator)
+                .map((i) => item(i.href, i.label, i.icon))}
+              {item("https://9remote.cc", "9Remote", "computer", { active: false, external: true, badge: "HOT" })}
+              {item("https://9english.net/", "9English", "translate", { active: false, external: true })}
+              {item("/dashboard/profile", "Settings", "settings")}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarRail />
+      </UISidebar>
 
       {/* Update Confirmation Modal */}
       <ConfirmModal
@@ -400,10 +277,6 @@ export default function Sidebar({ onClose }) {
     </>
   );
 }
-
-Sidebar.propTypes = {
-  onClose: PropTypes.func,
-};
 
 function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
   const isCountingDown = countdown > 0;
