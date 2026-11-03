@@ -490,7 +490,7 @@ export default function TokenSaverClient() {
     <div className="flex flex-col gap-6">
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
+          <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">
               bolt
             </span>

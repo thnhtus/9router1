@@ -439,7 +439,7 @@ export default function ProvidersPage() {
       {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <h2 className="text-base font-semibold tracking-tight flex items-center gap-2 leading-tight">
             Custom Providers (OpenAI/Anthropic Compatible){" "}
           </h2>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
@@ -492,7 +492,7 @@ export default function ProvidersPage() {
       {oauthEntries.length > 0 && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <h2 className="text-base font-semibold tracking-tight flex items-center gap-2 leading-tight">
             OAuth Providers
           </h2>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
@@ -539,7 +539,7 @@ export default function ProvidersPage() {
       {(freeEntries.length > 0 || freeTierEntries.length > 0) && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <h2 className="text-base font-semibold tracking-tight flex items-center gap-2 leading-tight">
             Free Tier Providers
           </h2>
           <button
@@ -600,7 +600,7 @@ export default function ProvidersPage() {
       {apikeyEntries.length > 0 && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <h2 className="text-base font-semibold tracking-tight flex items-center gap-2 leading-tight">
             API Key Providers{" "}
           </h2>
           <button

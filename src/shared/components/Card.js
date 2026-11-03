@@ -18,8 +18,8 @@ export default function Card({
     none: "",
     xs: "p-3",
     sm: "p-4",
-    md: "p-6",
-    lg: "p-8",
+    md: "p-5",
+    lg: "p-6",
   };
 
   return (
@@ -35,19 +35,17 @@ export default function Card({
       {...props}
     >
       {(title || action) && (
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             {icon && (
-              <div className="p-2 rounded-lg bg-muted text-muted-foreground">
-                <span className="material-symbols-outlined text-[20px]">{icon}</span>
-              </div>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]! leading-none text-muted-foreground">{icon}</span>
             )}
             <div>
               {title && (
-                <h3 className="font-heading font-medium text-card-foreground">{title}</h3>
+                <h3 className="text-[15px] font-semibold tracking-tight text-card-foreground">{title}</h3>
               )}
               {subtitle && (
-                <p className="text-sm text-muted-foreground">{subtitle}</p>
+                <p className="text-[13px] text-muted-foreground">{subtitle}</p>
               )}
             </div>
           </div>

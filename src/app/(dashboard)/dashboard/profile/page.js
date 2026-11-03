@@ -774,7 +774,7 @@ export default function ProfilePage() {
                 <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
-                <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
+                <h2 className="text-base font-semibold tracking-tight">Local Mode</h2>
                 <p className="text-sm text-muted-foreground">Running on your machine</p>
               </div>
             </div>

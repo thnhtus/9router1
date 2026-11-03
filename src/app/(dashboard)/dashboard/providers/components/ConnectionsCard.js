@@ -403,7 +403,7 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
     <>
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-          <h2 className="text-lg font-semibold">Connections</h2>
+          <h2 className="text-base font-semibold tracking-tight">Connections</h2>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground font-medium">Round Robin</span>
             <Toggle

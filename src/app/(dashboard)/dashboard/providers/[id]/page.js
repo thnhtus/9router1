@@ -1465,7 +1465,7 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
+              <h2 className="text-base font-semibold tracking-tight">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
               <p className="break-all text-sm text-muted-foreground">
                 {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
                 {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
@@ -1528,7 +1528,7 @@ export default function ProviderDetailPage() {
       ) : (
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">Connections</h2>
+            <h2 className="text-base font-semibold tracking-tight">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               {connections.length > 0 && proxyPools.length > 0 && (
                 <Button
@@ -1777,7 +1777,7 @@ export default function ProviderDetailPage() {
       <Card>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">
+            <h2 className="text-base font-semibold tracking-tight">
               {"Available Models"}
             </h2>
             {providerThinkingLevels && (

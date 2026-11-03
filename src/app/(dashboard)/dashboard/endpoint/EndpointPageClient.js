@@ -736,7 +736,7 @@ export default function APIPageClient({ machineId }) {
       {loadError && <ErrorState message="Couldn't load your API keys. Check that the 9Router server is running, then retry." onRetry={fetchData} />}
       {/* Endpoint Card */}
       <Card>
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <h2 className="text-base font-semibold tracking-tight mb-4 flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">api</span>
           API Endpoint
         </h2>
@@ -984,7 +984,7 @@ export default function APIPageClient({ machineId }) {
       {/* API Keys */}
       <Card id="require-api-key">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
+          <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">vpn_key</span>
             API Keys
           </h2>

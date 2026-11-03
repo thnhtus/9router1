@@ -249,7 +249,7 @@ export function GenericExampleCard({ providerId, kind }) {
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold mb-4">Example</h2>
+      <h2 className="text-base font-semibold tracking-tight mb-4">Example</h2>
       <div className="flex flex-col gap-2.5">
         {/* Model selector — dropdown if presets exist, else manual input for media kinds */}
         {kindModels.length > 0 ? (
