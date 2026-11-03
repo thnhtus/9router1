@@ -228,9 +228,14 @@ export default function Header({ showMenuButton = true }) {
   };
 
   return (
-    <header className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 pt-3 pb-2 border-b border-border/60 bg-card/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
+    <header className="z-20 flex h-12 shrink-0 items-center gap-3 border-b border-sidebar-border/60 px-4 sm:px-6 lg:px-8">
       {/* Sidebar toggle (Cmd/Ctrl+B) */}
-      {showMenuButton && <SidebarTrigger className="-ml-1 shrink-0 text-muted-foreground" />}
+      {showMenuButton && (
+        <>
+          <SidebarTrigger className="-ml-1.5 shrink-0 text-muted-foreground hover:text-foreground" />
+          <div aria-hidden="true" className="h-4 w-px shrink-0 bg-sidebar-border" />
+        </>
+      )}
 
       {/* Page title with breadcrumbs */}
       <div className="flex flex-col min-w-0 flex-1">
@@ -244,14 +249,12 @@ export default function Header({ showMenuButton = true }) {
                 }`}
               >
                 {index > 0 && (
-                  <span className="material-symbols-outlined text-muted-foreground text-base hidden sm:inline">
-                    chevron_right
-                  </span>
+                  <span aria-hidden="true" className="hidden text-[13px] text-muted-foreground/50 sm:inline">/</span>
                 )}
                 {crumb.href ? (
                   <Link
                     href={crumb.href}
-                    className="text-muted-foreground hover:text-primary transition-colors truncate"
+                    className="truncate text-[13px] text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {crumb.label}
                   </Link>
@@ -261,12 +264,12 @@ export default function Header({ showMenuButton = true }) {
                       <ProviderIcon
                         src={crumb.image}
                         alt={crumb.label}
-                        size={28}
-                        className="object-contain rounded max-w-[24px] max-h-[24px] sm:max-w-[28px] sm:max-h-[28px] shrink-0"
+                        size={20}
+                        className="size-5 shrink-0 rounded object-contain"
                         fallbackText={crumb.label.slice(0, 2).toUpperCase()}
                       />
                     )}
-                    <h1 className="text-base lg:text-2xl font-semibold text-foreground tracking-tight truncate">
+                    <h1 className="truncate text-[15px] font-semibold tracking-tight text-foreground">
                       {translate(crumb.label)}
                     </h1>
                   </div>
@@ -275,19 +278,17 @@ export default function Header({ showMenuButton = true }) {
             ))}
           </div>
         ) : title ? (
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <h1 className="flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-tight">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]! leading-none text-muted-foreground">
                   {icon}
                 </span>
               )}
-              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate">
-                {translate(title)}
-              </h1>
-            </div>
+              {translate(title)}
+            </h1>
             {description && (
-              <p className="hidden lg:block text-sm text-muted-foreground truncate">
+              <p className="hidden truncate pt-px text-[13px] text-muted-foreground/80 lg:block">
                 {translate(description)}
               </p>
             )}
@@ -296,15 +297,15 @@ export default function Header({ showMenuButton = true }) {
       </div>
 
       {/* Right actions */}
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex shrink-0 items-center gap-0.5">
         {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
           <div
-            className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-card/70 text-xs text-muted-foreground truncate"
+            className="mr-1 hidden h-7 max-w-[220px] items-center truncate rounded-md border border-border px-2 text-xs text-muted-foreground sm:flex"
             title={displayName}
           >
-            <span className="material-symbols-outlined text-[14px] mr-1.5 text-primary">person</span>
+            <span className="material-symbols-outlined mr-1.5 text-[14px]!">person</span>
             <span className="truncate">{displayName}</span>
-            <span className="ml-2 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            <span className="ml-2 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
               {loginMethod}
             </span>
           </div>
@@ -312,10 +313,10 @@ export default function Header({ showMenuButton = true }) {
         <HeaderSearch />
         <button
           onClick={() => setDonateOpen(true)}
-          className="hidden sm:flex items-center gap-1.5 px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
+          className="group/donate mr-1 hidden h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-black/[0.04] hover:text-foreground sm:flex dark:hover:bg-white/[0.05]"
           aria-label="Donate"
         >
-          <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
+          <span className="material-symbols-outlined text-[18px]! leading-none text-pink-500 dark:text-pink-400">volunteer_activism</span>
           <span className="hidden sm:inline">Donate</span>
         </button>
         <ThemeToggle />
@@ -336,8 +337,8 @@ function HeaderSearch() {
   if (!visible) return null;
 
   return (
-    <div className="relative w-[160px] sm:w-[220px]">
-      <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[16px] pointer-events-none">
+    <div className="relative mr-1 w-[160px] sm:w-[240px]">
+      <span className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px]! leading-none text-muted-foreground">
         search
       </span>
       <input
@@ -346,7 +347,7 @@ function HeaderSearch() {
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder || "Search"}
-        className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-card/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+        className="h-8 w-full rounded-md border border-black/[0.08] bg-black/[0.02] pl-8 pr-7 text-[13px] transition-colors placeholder:text-muted-foreground/70 focus:border-black/[0.16] focus:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/[0.08] dark:bg-white/[0.03] dark:focus:border-white/[0.16]"
       />
       {query && (
         <button
@@ -355,7 +356,7 @@ function HeaderSearch() {
           className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded"
           aria-label="Clear search"
         >
-          <span className="material-symbols-outlined text-[16px]">close</span>
+          <span className="material-symbols-outlined text-[16px]! leading-none">close</span>
         </button>
       )}
     </div>
