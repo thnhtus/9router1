@@ -111,12 +111,16 @@ async function evaluate({
     : DEFAULT_SYSTEMONE_ROUTER_MODEL;
   trace.routerModel = targetModel;
 
-  const state = extractPromptState(body);
-  if (!state) {
+  const baseState = extractPromptState(body);
+  if (!baseState) {
     log?.debug?.("COMBO", "smart-router: empty prompt state, skipping classification");
     trace.error = "empty prompt state";
     return null;
   }
+  const hints = [];
+  if ((baseState.match(/\n\s*[-*\d]+\./g) || []).length >= 4) hints.push("multi-step task");
+  if (/(migrat|refactor whole|toàn bộ|kiến trúc|architecture|database schema|irrevocable|production drop|dọn sạch)/i.test(baseState)) hints.push("high-stakes/irreversible");
+  const state = hints.length ? `${baseState}\n[task-signals: ${hints.join(", ")}]` : baseState;
 
   // Profiles (role, cost tier, llm-stats scores) let Jev trade capability for cost.
   const criteria = { ...buildChoiceCriteria(models), ...(await getRoutingProfiles(models)) };

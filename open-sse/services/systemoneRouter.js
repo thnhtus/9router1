@@ -31,6 +31,18 @@ const comboSessionModelStore = new Map();
  * @param {number} [maxChars=MAX_STATE_CHARS] - Max character cap
  * @returns {string} Clean prompt state
  */
+
+const _escalationBudget = new Map();
+export function consumeEscalationBudget(comboName, model, limit) {
+  const key = `${comboName}:${model}:${new Date().toISOString().slice(0, 10)}`;
+  const used = _escalationBudget.get(key) || 0;
+  if (used >= limit) return false;
+  _escalationBudget.set(key, used + 1);
+  return true;
+}
+
+export function resetEscalationBudget() { _escalationBudget.clear(); }
+
 export function extractPromptState(body, maxChars = MAX_STATE_CHARS) {
   if (!body || typeof body !== "object") return "";
 
@@ -47,7 +59,11 @@ export function extractPromptState(body, maxChars = MAX_STATE_CHARS) {
       const msg = messages[i];
       if (msg?.role === "user" || msg?.type === "message" || (!msg?.role && msg?.content)) {
         const text = extractTextFromContent(msg.content ?? msg.text);
-        if (text && text.trim().length > 0) userTexts.unshift(text.trim());
+        if (!text || text.trim().length === 0) continue;
+        const cleaned = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+        if (!cleaned) continue;
+        if (/^(This is an efficiency nudge|\[acp_delegate (completed|FAILED))/i.test(cleaned)) continue;
+        userTexts.unshift(cleaned);
       }
     }
     if (userTexts.length > 0) return joinPromptContext(userTexts, maxChars);

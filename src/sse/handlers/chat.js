@@ -16,7 +16,7 @@ import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
-import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, handleOrchestrateChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -29,6 +29,7 @@ import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
 import { augmentModelsWithSmartPool } from "open-sse/services/smartAutoPool.js";
+import { consumeEscalationBudget } from "open-sse/services/systemoneRouter.js";
 
 /**
  * Handle chat completion request
@@ -115,12 +116,17 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     const capModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings);
-    const augmentedModels = await filterAdapterModels(keyAccess, await augmentModelsWithSmartPool(capModels, comboStrategy, settings, modelStr, getComboModels), comboModels);
+    // Cost pool: Jev candidates for "smart"; last-resort fallback (tried only after every combo model fails) for other strategies.
+    const pooled = comboStrategies[modelStr]?.smartPool === false ? capModels : await augmentModelsWithSmartPool(capModels, "smart", settings, modelStr, getComboModels);
+    const allModels = await filterAdapterModels(keyAccess, pooled, comboModels);
+    const fallbackPool = comboStrategy === "smart" ? [] : allModels.filter((m) => !capModels.includes(m));
+    const augmentedModels = allModels.filter((m) => !fallbackPool.includes(m));
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m) && capModels.includes(m));
 
-    if (comboStrategy === "fusion") {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
-      return handleFusionChat({
+    if (comboStrategy === "fusion" || comboStrategy === "orchestrate") {
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
+      const multi = comboStrategy === "fusion" ? handleFusionChat : handleOrchestrateChat;
+      return multi({
         body,
         models: comboModels,
         handleSingleModel: (b, m, isPanel) => {
@@ -134,7 +140,8 @@ export async function handleChat(request, clientRawRequest = null) {
         log,
         comboName: modelStr,
         judgeModel: comboStrategies[modelStr]?.judgeModel,
-        tuning: comboStrategies[modelStr]?.fusionTuning,
+        plannerModel: comboStrategies[modelStr]?.judgeModel,
+        tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
       });
     }
 
@@ -153,9 +160,19 @@ export async function handleChat(request, clientRawRequest = null) {
       comboStrategy,
       comboStickyLimit,
       sessionId,
+      fallbackPool,
       smartPolicy: comboCfg.smartPolicy || "smart",
       sessionSticky: comboCfg.sessionSticky !== false,
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
+      smartWaitMs: typeof comboCfg.smartWaitMs === "number" ? comboCfg.smartWaitMs : 1200,
+      oneTurn: modelStr === "auto" ? {
+        models: ["team", "council"],
+        threshold: 0.4,
+        consume: async (choice) => {
+          const limit = choice === "team" ? 20 : 10;
+          return consumeEscalationBudget("auto", choice, limit);
+        },
+      } : null,
       resolveSmartChoice: comboStrategy === "smart"
         ? (b, m) => resolveSmartChoice({
             body: b,
@@ -215,9 +232,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const augmentedModels = await filterAdapterModels(keyAccess, capModels, comboModels);
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m) && capModels.includes(m));
 
-      if (comboStrategy === "fusion") {
-        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
-        return handleFusionChat({
+      if (comboStrategy === "fusion" || comboStrategy === "orchestrate") {
+        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
+        const multi = comboStrategy === "fusion" ? handleFusionChat : handleOrchestrateChat;
+        return multi({
           body,
           models: comboModels,
           handleSingleModel: (b, m, isPanel) => {
@@ -231,7 +249,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           log,
           comboName: modelStr,
           judgeModel: comboStrategies[modelStr]?.judgeModel,
-          tuning: comboStrategies[modelStr]?.fusionTuning,
+          plannerModel: comboStrategies[modelStr]?.judgeModel,
+          tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
         });
       }
 
@@ -255,6 +274,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         smartPolicy: comboCfg.smartPolicy || "smart",
         sessionSticky: comboCfg.sessionSticky !== false,
         confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
+        smartWaitMs: typeof comboCfg.smartWaitMs === "number" ? comboCfg.smartWaitMs : 1200,
         resolveSmartChoice: comboStrategy === "smart"
           ? (b, m) => resolveSmartChoice({
               body: b,

@@ -4,13 +4,13 @@ import { augmentModelsWithSmartPool } from "../../open-sse/services/smartAutoPoo
 const on = { smartAutoPool: { enabled: true, models: ["oc/free-a", "cc/opus", "gh/mini"] } };
 
 describe("augmentModelsWithSmartPool", () => {
-  it("appends pool models not already in the combo, smart strategy only", () => {
-    expect(augmentModelsWithSmartPool(["cc/opus", "cx/gpt"], "smart", on)).toEqual(["cc/opus", "cx/gpt", "oc/free-a", "gh/mini"]);
+  it("appends pool models not already in the combo, smart strategy only", async () => {
+    await expect(augmentModelsWithSmartPool(["cc/opus", "cx/gpt"], "smart", on)).resolves.toEqual(["cc/opus", "cx/gpt", "oc/free-a", "gh/mini"]);
   });
-  it("leaves non-smart combos, disabled pool and missing settings untouched", () => {
+  it("leaves non-smart combos, disabled pool and missing settings untouched", async () => {
     const m = ["cc/opus"];
-    expect(augmentModelsWithSmartPool(m, "fallback", on)).toBe(m);
-    expect(augmentModelsWithSmartPool(m, "smart", { smartAutoPool: { enabled: false, models: ["x/y"] } })).toBe(m);
-    expect(augmentModelsWithSmartPool(m, "smart", {})).toBe(m);
+    expect(await augmentModelsWithSmartPool(m, "fallback", on)).toBe(m);
+    expect(await augmentModelsWithSmartPool(m, "smart", { smartAutoPool: { enabled: false, models: ["x/y"] } })).toBe(m);
+    expect(await augmentModelsWithSmartPool(m, "smart", {})).toBe(m);
   });
 });

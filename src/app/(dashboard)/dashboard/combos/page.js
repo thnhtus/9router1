@@ -54,6 +54,7 @@ const STRATEGY_OPTIONS = [
   { value: "round-robin", label: "Round Robin — rotate" },
   { value: "smart", label: "Smart Router — System One" },
   { value: "fusion", label: "Fusion — panel + judge" },
+  { value: "orchestrate", label: "Orchestrate — planner + workers" },
 ];
 
 function getPolicyBadgeLabel(strategy = {}) {
@@ -423,6 +424,7 @@ export default function CombosPage() {
             <li><span className="font-medium text-foreground">Round Robin</span> — rotates models across requests to spread load</li>
             <li><span className="font-medium text-foreground">Smart Router</span> — queries a System One decision model to pick the optimal model before generation; supports Smart Switch (adaptive hysteresis), Strict Lock (1 task = 1 session, +0ms latency), and Per-Turn modes to maximize prompt-cache retention</li>
             <li><span className="font-medium text-foreground">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
+            <li><span className="font-medium text-foreground">Orchestrate</span> — a planner (Judge) splits the request into subtasks, the combo models solve them in parallel, then the planner writes one answer. Simple or tool-loop turns go straight to the planner</li>
           </ul>
           <p className="hidden text-xs text-muted-foreground mt-3 max-w-2xl">
             <span className="font-medium text-foreground">Cursor / Claude Default</span> create combos named exactly like those clients&apos; model IDs (e.g. <code className="font-mono">composer-2.5</code>, <code className="font-mono">opus</code>), seeded with the matching <code className="font-mono">cu/…</code> or <code className="font-mono">cc/…</code> route so traffic can hit 9router without the prefix.
@@ -693,7 +695,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
-  const isFusion = current === "fusion";
+  const isFusion = current === "fusion" || current === "orchestrate";
   const isSmart = current === "smart";
   // The synced catalog is server-only, so resolving here would fall back to the
   // generic patterns and under-report the limits. getCaps carries the server's
@@ -748,7 +750,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-muted-foreground">Judge</span>
+                <span className="text-[11px] font-medium text-muted-foreground">{current === "orchestrate" ? "Planner" : "Judge"}</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
                   className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"

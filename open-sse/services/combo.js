@@ -384,11 +384,18 @@ export async function handleComboChat({
   confidenceThreshold = 0.7,
   resolveSmartChoice = null,
   smartWaitMs = SMART_WAIT_MS,
+  oneTurn = null,
+  fallbackPool = [],
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
 
   if (comboStrategy === "smart") {
+    // One-turn escalation targets (e.g. team/council): only run when Jev picks them, never
+    // become the session sticky (keeps the warm cache), never used as plain fallbacks.
+    const oneTurnSet = new Set(Array.isArray(oneTurn?.models) ? oneTurn.models.filter((m) => models.includes(m)) : []);
+    const oneTurnThreshold = Number.isFinite(oneTurn?.threshold) ? oneTurn.threshold : 0.4;
+    if (oneTurnSet.size) rotatedModels = models = models.filter((m) => !oneTurnSet.has(m));
     const policy = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
     const isPerTurn = policy === "per-turn" || sessionSticky === false;
     const isStrict = policy === "strict";
@@ -397,7 +404,7 @@ export async function handleComboChat({
     if (policy === "smart-switch-90") switchThreshold = 0.9;
     else if (policy === "custom" || policy.startsWith("smart-switch") || policy === "smart") {
       const custom = Number(confidenceThreshold);
-      if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
+      if (Number.isFinite(custom) && custom > 0) switchThreshold = custom > 1 ? custom / 100 : custom; // accept 70 as 70%
     }
 
     // Single exit point for "stay on this model": pins it first, keeps the rest in order.
@@ -410,7 +417,7 @@ export async function handleComboChat({
     // Late Jev answer: remember it for this session's next turn (unless the current
     // sticky model is already in the chosen tier — keep its warm prompt cache).
     const onLate = (r) => {
-      if (isPerTurn || !sessionId || !r?.choice || !models.includes(r.choice)) return;
+      if (isPerTurn || !sessionId || !r?.choice || !models.includes(r.choice)) return; // one-turn picks never stick
       if (typeof r.confidence !== "number" || r.confidence < switchThreshold) return;
       const current = getStickyComboModel(comboName, sessionId, models);
       if (current === r.choice || (r.peers || []).includes(current)) return;
@@ -424,14 +431,29 @@ export async function handleComboChat({
       log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
     } else if (typeof resolveSmartChoice === "function") {
       try {
-        const smartResult = await raceSmartChoice(resolveSmartChoice(body, models), onLate, smartWaitMs);
+        const candidates = oneTurnSet.size ? [...models, ...oneTurnSet] : models;
+        const smartResult = await raceSmartChoice(resolveSmartChoice(body, candidates), onLate, smartWaitMs);
         const choice = smartResult?.choice;
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
+        let escalated = false;
+        if (oneTurnSet.has(choice) && (conf === null || conf >= oneTurnThreshold)) {
+          const allowed = typeof oneTurn?.consume === "function" ? await Promise.resolve(oneTurn.consume(choice)).catch(() => true) : true;
+          if (allowed) {
+            const base = activeStickyModel ? pin(activeStickyModel) : models;
+            rotatedModels = [choice, ...base];
+            escalated = true;
+            log.info("COMBO", `smart-router one-turn escalation → ${choice} (confidence: ${conf ?? "N/A"}); session stays on ${activeStickyModel || "default order"}`);
+          } else {
+            log.info("COMBO", `smart-router escalation budget for ${choice} used up, staying on regular models`);
+          }
+        }
         const sameTier = activeStickyModel && (smartResult?.peers || []).includes(activeStickyModel);
         const valid = choice && models.includes(choice);
         const confident = conf !== null && conf >= switchThreshold;
 
-        if (activeStickyModel) {
+        if (escalated) {
+          // handled above
+        } else if (activeStickyModel) {
           // Smart Switch (Adaptive): only move off the sticky model when Jev is confident
           // the task changed to a different tier; otherwise keep the warm prompt cache.
           if (valid && confident && choice !== activeStickyModel && !sameTier) {
@@ -443,7 +465,7 @@ export async function handleComboChat({
             rotatedModels = pin(activeStickyModel);
             log.info("COMBO", `smart-router [smart-switch] retained prompt cache model "${activeStickyModel}"`);
           }
-        } else if (valid && (conf === null || confident)) {
+        } else if (valid && !oneTurnSet.has(choice) && (conf === null || confident)) {
           // No confidence reported = accept the choice (first pick has no cache to protect).
           // Turn 1 or per-turn: evaluate System One to select initial model
           rotatedModels = orderModelsByChoice(models, smartResult);
@@ -482,6 +504,10 @@ export async function handleComboChat({
     }
   }
   
+  // Last resort: pool models run only after every combo model failed (never rotated in).
+  const extra = (fallbackPool || []).filter((m) => !rotatedModels.includes(m));
+  if (extra.length) rotatedModels = [...rotatedModels, ...extra];
+
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
@@ -774,6 +800,15 @@ function buildJudgePrompt(answers) {
 }
 
 // Fusion tuning. Overridable per-combo via settings.comboStrategies[name].
+
+// Short-lived cooldown for panel models that just returned 429/503, so a later fusion
+// run does not keep hammering a rate-limited upstream. In-memory, per process.
+const PANEL_COOLDOWN_MS = 5 * 60 * 1000;
+const panelCooldown = new Map();
+function isPanelCoolingDown(model) { return (panelCooldown.get(model) || 0) > Date.now(); }
+function markPanelCooldown(model) { panelCooldown.set(model, Date.now() + PANEL_COOLDOWN_MS); }
+export function clearPanelCooldown() { panelCooldown.clear(); }
+
 const FUSION_DEFAULTS = {
   minPanel: 2,             // answers needed before stragglers get a grace window
   stragglerGraceMs: 8000,  // wait this long for laggards once quorum is reached
@@ -849,6 +884,13 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
  * @returns {Promise<Response>}
  */
+// A new user prompt, not a tool-result step of an agent loop.
+function isFreshUserTurn(body) {
+  const turn = body.messages || body.input || body.contents;
+  const last = Array.isArray(turn) ? turn[turn.length - 1] : null;
+  return last?.role === "user" && !(Array.isArray(last.content) && last.content.some((c) => c?.type === "tool_result"));
+}
+
 export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
   const panel = Array.isArray(models) ? models.filter(Boolean) : [];
   if (panel.length === 0) {
@@ -866,6 +908,9 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
   const minPanel = Math.min(Math.max(2, cfg.minPanel), panel.length);
   const judge = judgeModel && judgeModel.trim() ? judgeModel.trim() : panel[0];
+  // Opt-in (fusionTuning.freshTurnsOnly): in an agent tool loop the panel already deliberated
+  // on the user turn, so tool-result steps go to the judge alone instead of re-running the panel.
+  if (cfg.freshTurnsOnly && !isFreshUserTurn(body)) return handleSingleModel(body, judge);
   log.info("FUSION", `Combo "${comboName}" | panel=${panel.length} [${panel.join(", ")}] | judge=${judge} | quorum=${minPanel}`);
 
   // 1. Fan out to the panel in parallel: non-streaming, tools stripped (we want prose).
@@ -883,7 +928,10 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
 
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
+  // Skip panel models currently cooling down; if that empties the panel, fall back to all.
+  const activePanel = panel.filter((m) => !isPanelCoolingDown(m));
+  const runPanel = activePanel.length >= 2 ? activePanel : panel;
+  const calls = runPanel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
@@ -891,11 +939,11 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   const answers = [];
   for (let i = 0; i < settled.length; i++) {
     const res = settled[i];
-    const model = panel[i];
+    const model = runPanel[i];
     if (!res) { log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`); continue; }
     if (res.__timeout) { log.warn("FUSION", `Panel ${model} timed out`); continue; }
     if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); continue; }
-    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); continue; }
+    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); if (res.status === 429 || res.status === 503) markPanelCooldown(model); continue; }
     try {
       const json = await res.clone().json();
       const text = extractPanelText(json);
@@ -927,6 +975,149 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
   return handleSingleModel(judgeBody, judge);
+}
+
+// Orchestrate tuning. Overridable per-combo via settings.comboStrategies[name].orchestrateTuning.
+// reviewRounds: planner checks worker results and resends rejected ones with feedback (capped at 2).
+const ORCHESTRATE_DEFAULTS = {
+  maxSubtasks: 4,
+  plannerTimeoutMs: 60000,
+  workerTimeoutMs: 120000,
+  reviewRounds: 0,
+};
+
+function buildPlannerPrompt(max, workers) {
+  return [
+    "You are the PLANNER of a multi-agent team. Decide whether the user's latest request benefits from being split into independent subtasks that worker models solve in parallel (research angles, separate components, alternatives to compare).",
+    `Available workers: ${workers.join(", ")}. Workers see ONLY their instruction, not this conversation, so put every needed fact into it. Never include secrets, API keys or credentials.`,
+    `Reply with ONLY a JSON object: {"subtasks":[{"title":"...","worker":"one of the available workers","instruction":"self-contained instruction with all needed context"}]} using 2-${max} subtasks, or {"subtasks":[]} when the request is simple, conversational, or not parallelizable.`,
+  ].join("\n");
+}
+
+// Lenient: planners wrap JSON in prose or fences. Anything unparseable yields `fallback`.
+function parseJsonObject(text) {
+  const m = typeof text === "string" ? text.match(/\{[\s\S]*\}/) : null;
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch { return null; }
+}
+
+function parsePlan(text, max, workers = []) {
+  const list = parseJsonObject(text)?.subtasks;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((s) => s && typeof s.instruction === "string" && s.instruction.trim())
+    .slice(0, max)
+    .map((s, i) => ({
+      title: String(s.title || `Subtask ${i + 1}`),
+      instruction: s.instruction.trim(),
+      worker: workers.includes(s.worker) ? s.worker : workers[i % workers.length],
+    }));
+}
+
+// Worker sees only its instruction: no history, no client system prompt (keeps context small,
+// avoids leaking the conversation and provider-specific history fields like reasoning_content).
+function isolatedTurn(base, text) {
+  const { system, instructions, systemInstruction, ...b } = base;
+  for (const k of ["messages", "input", "contents"]) if (Array.isArray(b[k])) b[k] = [];
+  return appendUserTurn(b, text);
+}
+
+function buildWorkerPrompt(s, feedback) {
+  const lines = [`You are a WORKER on a team. Do ONLY this task and return the result, no preamble.\n\nTask: ${s.title}\n${s.instruction}`];
+  if (feedback) lines.push(`\nYour previous answer was rejected by the reviewer:\n${feedback}\nFix it and return the full corrected result.`);
+  return lines.join("\n");
+}
+
+function buildReviewPrompt(results) {
+  const body = results.map((r, i) => `[${i}] ${r.title}\n${r.text}`).join("\n\n");
+  return [
+    "You are the REVIEWER. Check each worker result below against the subtask you planned for the user's request.",
+    'Reply with ONLY a JSON object: {"retry":[{"index":0,"feedback":"what is wrong and what to fix"}]} listing results that are wrong, incomplete or off-task, or {"retry":[]} when all are acceptable.',
+    "",
+    "=== WORKER RESULTS ===",
+    body,
+    "=== END WORKER RESULTS ===",
+  ].join("\n");
+}
+
+function buildSynthesisPrompt(results) {
+  const body = results.map((r) => `[${r.title}]\n${r.text}`).join("\n\n");
+  return [
+    "Your team of workers finished the subtasks you planned. Their results are below.",
+    "Do NOT mention workers or subtasks. Verify the results, resolve conflicts with your own judgment, fill gaps, then write ONE complete final answer to the user's original request.",
+    "",
+    "=== WORKER RESULTS ===",
+    body,
+    "=== END WORKER RESULTS ===",
+  ].join("\n");
+}
+
+/**
+ * Handle an orchestrate combo: a planner splits the request into subtasks and assigns
+ * each to a combo model (round-robin when it names none/an unknown one), workers solve
+ * them in parallel seeing only their instruction, the planner optionally reviews and
+ * resends rejected results, then synthesizes.
+ *
+ * Only a fresh user turn is orchestrated; tool-result turns of an agent loop go
+ * straight to the planner so one task is planned once, not every tool step.
+ * Planner/worker calls are non-streaming and tool-free; the final call keeps the
+ * client's stream flag + tools. Any planning/worker failure degrades to the planner
+ * answering directly.
+ *
+ * @param {Object} options - same shape as handleFusionChat; plannerModel falls back to models[0]
+ */
+export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning }) {
+  const workers = Array.isArray(models) ? models.filter(Boolean) : [];
+  const planner = plannerModel && plannerModel.trim() ? plannerModel.trim() : workers[0];
+  if (!planner) {
+    return new Response(
+      JSON.stringify({ error: { message: "Orchestrate combo has no models" } }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  if (!isFreshUserTurn(body) || workers.length === 0) return handleSingleModel(body, planner);
+
+  const cfg = { ...ORCHESTRATE_DEFAULTS, ...(tuning || {}) };
+  const { tools, tool_choice, stream_options, ...rest } = body;
+  const base = { ...rest, stream: false };
+  if (Array.isArray(base.messages)) base.messages = flattenToolHistory(base.messages);
+  else if (Array.isArray(base.input)) base.input = flattenToolHistory(base.input);
+  const askPlanner = async (prompt) => {
+    const res = await withTimeout(handleSingleModel(appendUserTurn(base, prompt), planner, true), cfg.plannerTimeoutMs);
+    if (!res?.ok) return "";
+    try { return extractPanelText(await res.clone().json()); } catch { return ""; }
+  };
+  const runWorker = (s, feedback) =>
+    withTimeout(handleSingleModel(isolatedTurn(base, buildWorkerPrompt(s, feedback)), s.worker, true), cfg.workerTimeoutMs)
+      .then(async (res) => {
+        if (!res?.ok) { log.warn("ORCHESTRATE", `Worker ${s.worker} failed on "${s.title}"`, { status: res?.status }); return null; }
+        const text = extractPanelText(await res.clone().json().catch(() => null));
+        return text ? { ...s, text } : null;
+      });
+
+  // 1. Plan.
+  const subtasks = parsePlan(await askPlanner(buildPlannerPrompt(cfg.maxSubtasks, workers)), cfg.maxSubtasks, workers);
+  log.info("ORCHESTRATE", `Combo "${comboName}" | planner=${planner} | subtasks=${subtasks.length}`);
+  if (subtasks.length < 2) return handleSingleModel(body, planner);
+
+  // 2. Fan out to the assigned workers.
+  const t0 = Date.now();
+  let results = (await Promise.all(subtasks.map((s) => runWorker(s)))).filter(Boolean);
+  log.info("ORCHESTRATE", `${results.length}/${subtasks.length} subtasks done in ${Date.now() - t0}ms`);
+  if (results.length === 0) return handleSingleModel(body, planner);
+
+  // 3. Review: rejected results go back to the same worker once per round; a failed retry keeps the old result.
+  for (let round = 0; round < Math.min(Number(cfg.reviewRounds) || 0, 2); round++) {
+    const retry = (parseJsonObject(await askPlanner(buildReviewPrompt(results)))?.retry || [])
+      .filter((r) => Number.isInteger(r?.index) && results[r.index] && typeof r.feedback === "string");
+    log.info("ORCHESTRATE", `Review round ${round + 1}: ${retry.length} rejected`);
+    if (retry.length === 0) break;
+    const redone = await Promise.all(retry.map((r) => runWorker(results[r.index], r.feedback)));
+    retry.forEach((r, i) => { if (redone[i]) results[r.index] = redone[i]; });
+  }
+
+  // 4. Synthesize (streams to client if requested).
+  return handleSingleModel(appendUserTurn(body, buildSynthesisPrompt(results)), planner);
 }
 
 export {

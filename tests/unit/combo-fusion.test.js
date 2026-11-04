@@ -213,4 +213,18 @@ describe("fusion combo", () => {
     // Flattened tool_result
     expect(panelBody.messages[2].content).toBe("[Tool result: done]");
   });
+
+  it("freshTurnsOnly: tool-result step goes to the judge alone", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("ans"));
+    await handleFusionChat({
+      body: { messages: [
+        { role: "user", content: "do it" },
+        { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "run" }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "done" }] },
+      ] },
+      models: ["p/a", "p/b"], handleSingleModel, log, judgeModel: "p/judge",
+      tuning: { freshTurnsOnly: true },
+    });
+    expect(handleSingleModel.mock.calls.map((c) => c[1])).toEqual(["p/judge"]);
+  });
 });

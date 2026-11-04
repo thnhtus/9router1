@@ -159,6 +159,28 @@ describe("System One Smart Combo Router", () => {
   });
 
   describe("handleComboChat with smart strategy", () => {
+    it("one-turn escalation runs the picked model once and keeps the session sticky", async () => {
+      const calls = [];
+      const handleSingleModel = vi.fn(async (_b, model) => { calls.push(model); return okResponse(model); });
+      const picks = ["cc/sonnet", "council", "council"];
+      const resolveSmartChoice = vi.fn(async (_b, cands) => {
+        expect(cands).toContain("council");
+        return { choice: picks.shift(), confidence: 0.9 };
+      });
+      let budget = 1;
+      const args = {
+        models: ["cc/sonnet", "council", "ag/flash"],
+        handleSingleModel, log, comboName: "auto-1t", comboStrategy: "smart",
+        sessionId: "s-1t", resolveSmartChoice,
+        oneTurn: { models: ["council"], consume: async () => budget-- > 0 },
+      };
+      for (const t of ["hi", "Postgres or SQLite?", "again?"]) {
+        await handleComboChat({ ...args, body: { messages: [{ role: "user", content: t }] } });
+      }
+      // turn1 sonnet; turn2 escalates to council; turn3 budget exhausted → back to sonnet
+      expect(calls).toEqual(["cc/sonnet", "council", "cc/sonnet"]);
+    });
+
     it("routes to the System One chosen model on Turn 1 and sticks to it on Turn 2", async () => {
       const calls = [];
       const handleSingleModel = vi.fn(async (_body, model) => {

@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
-import { recordComboCost } from "open-sse/services/comboTrace.js";
+import { recordComboCost, getCurrentCombo } from "open-sse/services/comboTrace.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -78,6 +78,7 @@ function aggregateEntryToDay(day, entry) {
 
   day.byProvider ||= {};
   day.byModel ||= {};
+  day.byCombo ||= {};
   day.byAccount ||= {};
   day.byApiKey ||= {};
   day.byEndpoint ||= {};
@@ -86,6 +87,8 @@ function aggregateEntryToDay(day, entry) {
 
   const modelKey = entry.provider ? `${entry.model}|${entry.provider}` : entry.model;
   addToCounter(day.byModel, modelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
+
+  if (entry.combo) addToCounter(day.byCombo, entry.combo, { ...vals, meta: { rawModel: entry.combo } });
 
   if (entry.connectionId) {
     addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
@@ -247,6 +250,7 @@ export async function saveRequestUsage(entry) {
     const db = await getAdapter();
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
+    if (!entry.combo) entry.combo = getCurrentCombo();
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
     recordComboCost(entry.cost, entry.tokens);
 
@@ -284,10 +288,10 @@ export async function saveRequestUsage(entry) {
       }
 
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, combo, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+          getCurrentCombo(), entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
           stringifyJson(tokens), stringifyJson({}),
         ]
@@ -297,7 +301,7 @@ export async function saveRequestUsage(entry) {
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
-        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+        byProvider: {}, byModel: {}, byCombo: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
       };
       aggregateEntryToDay(day, entry);
       db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
@@ -402,7 +406,7 @@ export async function getUsageStats(period = "all") {
   const stats = {
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
-    byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+    byProvider: {}, byModel: {}, byCombo: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -488,6 +492,16 @@ export async function getUsageStats(period = "all") {
         stats.byModel[statsKey].cachedTokens += m.cachedTokens || 0;
         stats.byModel[statsKey].cost += m.cost || 0;
         if (dateKey > (stats.byModel[statsKey].lastUsed || "")) stats.byModel[statsKey].lastUsed = dateKey;
+      }
+
+      for (const [ck, c] of Object.entries(day.byCombo || {})) {
+        if (!stats.byCombo[ck]) stats.byCombo[ck] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: ck, provider: "combo", lastUsed: dateKey };
+        stats.byCombo[ck].requests += c.requests || 0;
+        stats.byCombo[ck].promptTokens += c.promptTokens || 0;
+        stats.byCombo[ck].completionTokens += c.completionTokens || 0;
+        stats.byCombo[ck].cachedTokens += c.cachedTokens || 0;
+        stats.byCombo[ck].cost += c.cost || 0;
+        if (dateKey > (stats.byCombo[ck].lastUsed || "")) stats.byCombo[ck].lastUsed = dateKey;
       }
 
       for (const [connId, a] of Object.entries(day.byAccount || {})) {

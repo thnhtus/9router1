@@ -1,7 +1,9 @@
 # Tooling
-- For UI clicks and checks in the running app, use the browseros-neo browser tool and review the actual responses yourself instead of asking the user to click. Confidence: 0.55
+- For UI clicks and checks in the running app, use the browseros-neo browser tool and review the actual responses yourself instead of asking the user to click. Confidence: 0.6
 - Wants charts/data visualizations built with D3.js (https://d3js.org/). Confidence: 0.5
-- To analyze external UI reference pages (e.g. affectui.com components) before adapting them into the project, use the `rea` tool (e.g. `rea capture-browser-scenario`). Confidence: 0.6
+- For node/edge graphs (e.g. agents/provider topology graphs), wants React Flow (https://reactflow.dev/) with `smoothstep` edge type. Confidence: 0.5
+- To analyze external UI reference pages (e.g. affectui.com components) before adapting them into the project, use the `rea` tool (e.g. `rea capture-browser-scenario`). Confidence: 0.7
 - Wants DB/schema integration and migration work gated (validated) through the Supabase MCP. Confidence: 0.55
 - Prefers moving app state that fits a DB (file-based logs and state) into the DB, with migrations to import the existing data. Confidence: 0.35
-- For UI polish tasks, apply the impeccable skill together with the /taste design principles. Confidence: 0.65
+- For UI polish tasks, apply the impeccable skill together with the /taste design principles. Confidence: 0.7
+- Runs agent sessions through the billion-context (`bili`) proxy in front of local 9Router (port 20128). When bili/proxy errors come up (e.g. 502 `preflight_compress_failed` context-window errors), wants the agent to fix the config itself (`~/.config/billion-context/billion-context.json`) rather than just explain the error. Confidence: 0.4

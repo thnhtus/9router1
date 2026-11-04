@@ -51,3 +51,4 @@ export function recordComboCost(cost, tokens) {
 }
 
 export const listComboTraces = () => store.runs;
+export function getCurrentCombo() { const ctx = als.getStore(); return ctx?.run?.combo || null; }
