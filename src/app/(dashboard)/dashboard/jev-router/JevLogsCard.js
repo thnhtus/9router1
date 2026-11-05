@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, Fragment } from "react";
-import { Card, Button, Badge } from "@/shared/components";
+import { useState, useEffect, useCallback } from "react";
+import { Card, Button, Badge, Modal } from "@/shared/components";
 
 const PAGE = 50;
 const fetchLogs = (page = 1) => fetch(`/api/jev-logs?limit=${PAGE}&page=${page}`).then((r) => r.json());
@@ -10,7 +10,7 @@ function Json({ label, value }) {
   return (
     <div className="min-w-0 flex-1">
       <p className="mb-1 text-xs font-medium text-text-muted">{label}</p>
-      <pre className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs">{value ? JSON.stringify(value, null, 2) : "—"}</pre>
+      <pre className="max-h-[calc(85vh-180px)] overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">{value ? JSON.stringify(value, null, 2) : "—"}</pre>
     </div>
   );
 }
@@ -96,9 +96,8 @@ export default function JevLogsCard() {
             </thead>
             <tbody>
               {logs.map((l) => (
-                <Fragment key={l.id}>
-                  <tr
-                    tabIndex={0} aria-expanded={open?.id === l.id}
+                <tr key={l.id}
+                    tabIndex={0} aria-haspopup="dialog"
                     onClick={() => toggle(l.id)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(l.id))}
                     className="cursor-pointer border-t border-border hover:bg-muted/50 focus-visible:outline focus-visible:outline-2"
                   >
@@ -109,26 +108,6 @@ export default function JevLogsCard() {
                     <td className="pr-3 tabular-nums">{l.latencyMs != null ? `${l.latencyMs} ms` : "—"}</td>
                     <td>{l.error ? <Badge variant="error" title={l.error}>failed</Badge> : <Badge variant="success">ok</Badge>}</td>
                   </tr>
-                  {open?.id === l.id && (
-                    <tr>
-                      <td colSpan={6} className="pb-3">
-                        {!open.detail ? <p className="text-sm text-text-muted">Loading…</p> : (
-                          <div className="flex flex-col gap-2">
-                            <p className="text-xs text-text-muted">
-                              Router: <span className="font-mono">{open.detail.routerModel || "—"}</span>
-                              {open.detail.status != null && ` · HTTP ${open.detail.status}`}
-                              {open.detail.error && ` · ${open.detail.error}`}
-                            </p>
-                            <div className="flex flex-col gap-3 lg:flex-row">
-                              <Json label="Request" value={open.detail.request} />
-                              <Json label="Response" value={open.detail.response} />
-                            </div>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
               ))}
             </tbody>
           </table>
@@ -143,6 +122,21 @@ export default function JevLogsCard() {
           )}
         </div>
       )}
+      <Modal isOpen={!!open} onClose={() => setOpen(null)} title="Jev request / response" size="full" className="sm:max-w-6xl">
+        {!open?.detail ? <p className="text-sm text-text-muted">Loading…</p> : (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-text-muted">
+              Router: <span className="font-mono">{open.detail.routerModel || "—"}</span>
+              {open.detail.status != null && ` · HTTP ${open.detail.status}`}
+              {open.detail.error && ` · ${open.detail.error}`}
+            </p>
+            <div className="flex flex-col gap-3 lg:flex-row">
+              <Json label="Request" value={open.detail.request} />
+              <Json label="Response" value={open.detail.response} />
+            </div>
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 }

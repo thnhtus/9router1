@@ -36,3 +36,17 @@ describe("combo fairness: per-turn soft head", () => {
     expect(order[0]).toBe("a");
   });
 });
+
+describe("Jev criteria carry combo health", async () => {
+  const { addHealth } = await import("../../src/sse/services/systemoneRouter.js");
+  it("marks a model that keeps failing as unreliable", () => {
+    const c = `h-${Math.random()}`;
+    fairnessOrdered(["a", "b"], c);
+    markComboMember(c, "a", true);
+    markComboMember(c, "b");
+    const crit = addHealth({ a: "cost: free", b: "cost: free" }, c);
+    expect(crit.a).toContain("unreliable");
+    expect(crit.a).toContain("failed recently");
+    expect(crit.b).toBe("cost: free");
+  });
+});

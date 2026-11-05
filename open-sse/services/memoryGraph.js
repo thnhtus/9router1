@@ -41,20 +41,26 @@ async function retrieveNode(state) {
   }
 }
 
-async function extractNode(state) {
-  // ponytail: heuristic extractor; ceiling = misses implicit facts; upgrade = LLM extraction via 9Router combo.
-  const text = String(state.query || "");
-  const facts = [];
-  const lower = text.toLowerCase();
-  if (lower.startsWith("remember") || lower.startsWith("nhớ") || lower.includes("always") || lower.includes("never")) {
-    facts.push(text.trim());
-  }
-  return { status: "extracted", newFacts: facts };
+export function extractFacts(text) {
+  // ponytail: sentence-start heuristic only; ceiling = misses implicit facts; upgrade = LLM extraction via 9Router combo.
+  const t = String(text || "").trim();
+  const lower = t.toLowerCase();
+  return /^(remember|nhớ|always|never|luôn)(\s|$)/.test(lower) ? [t] : [];
 }
+
+async function extractNode(state) {
+  return { status: "extracted", newFacts: extractFacts(state.query) };
+}
+
+// Same-process dedup: combo/retry fires concurrent lifecycles for one message; skip identical facts within 60s.
+const recentFacts = new Map();
 
 async function consolidateNode(state) {
   const consolidated = [];
   for (const fact of state.newFacts || []) {
+    const key = `${state.ownerType}|${state.ownerId}|${fact}`;
+    if (Date.now() - (recentFacts.get(key) || 0) < 60_000) continue;
+    recentFacts.set(key, Date.now());
     try {
       const existing = await retrieveMemories({ ownerType: state.ownerType, ownerId: state.ownerId, queryEmbedding: null, topK: 5000 });
       let match = existing.find((m) => m.content === fact);
@@ -71,7 +77,9 @@ async function consolidateNode(state) {
         const mem = await createMemory({ ownerType: state.ownerType, ownerId: state.ownerId, type: "semantic", content: fact, embedding: fe });
         consolidated.push(mem.id);
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[memory] consolidate failed:", err?.message || err);
+    }
   }
   return { status: "consolidated", consolidated };
 }

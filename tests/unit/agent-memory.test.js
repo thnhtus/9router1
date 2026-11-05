@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createMemory, listMemories, updateMemory, retrieveMemories } from "../../src/lib/db/repos/agentMemoriesRepo.js";
 import { POST as createRoute } from "../../src/app/api/memory/route.js";
+import { extractFacts } from "../../open-sse/services/memoryGraph.js";
 
 describe("agent memory repo", () => {
   it("create/list/update version bump", async () => {
@@ -25,5 +26,16 @@ describe("memory API validation", () => {
     const req = new Request("http://localhost/api/memory", { method: "POST", body: JSON.stringify({ ownerType: "x", ownerId: "u", type: "semantic", content: "hi" }), headers: { "Content-Type": "application/json" } });
     const res = await createRoute(req);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("extractFacts heuristic", () => {
+  it("matches sentence-start triggers only", () => {
+    expect(extractFacts("remember my favorite color is blue")).toEqual(["remember my favorite color is blue"]);
+    expect(extractFacts("Nhớ hộ tôi địa chỉ này")).toHaveLength(1);
+    expect(extractFacts("never store this")).toEqual(["never store this"]);
+    // must NOT match trigger words mid-text (past junk: ACP status line matched "never guess them")
+    expect(extractFacts("[ACP status: refs above it, never guess them]")).toEqual([]);
+    expect(extractFacts("can you always answer in English?")).toEqual([]);
   });
 });

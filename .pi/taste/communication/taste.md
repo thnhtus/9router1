@@ -1,7 +1,7 @@
 # Communication
 - Writes to the agent in Vietnamese; reply in Vietnamese. Confidence: 0.8
 - For investigation and audit tasks, wants a thorough search but a concise single combined report with file:line references. Confidence: 0.45
-- Gives terse go-aheads ("oke làm đi", "làm luôn", "tiếp tục", "đổi đi, rồi chạy luôn") to finish the listed remaining/follow-up work, so the agent should just do natural follow-ups instead of stopping to ask. Confidence: 0.7
+- Gives terse go-aheads ("oke làm đi", "làm luôn", "tiếp tục", "đổi đi, rồi chạy luôn") to finish the listed remaining/follow-up work, so the agent should just do natural follow-ups instead of stopping to ask. Confidence: 0.75
 - For multi-phase feature work, asks to spawn background workers to keep progressing ("spawn workers để làm liên tục"). Prefers the agent to wait for worker completion notifications rather than polling, then verify build/tests and report back. Confidence: 0.4
 - When the agent offers lettered options (e.g. "A — ...; B — ..."), the user answers with just the letter (e.g. "a"). Keep such choice prompts short and lettered so a one-letter reply is enough. Confidence: 0.35
 - Questions arbitrary choices ("tại sao phải ... combo này?"). Before changing config, check that the target fits, e.g. that a combo actually has models, and briefly explain why it was picked over the alternatives. Confidence: 0.35

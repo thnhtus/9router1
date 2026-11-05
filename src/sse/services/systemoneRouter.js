@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { getRoutingProfiles, getModelTiers } from "@/lib/llmStats.js";
 import { appendJevLog, countJevSkip, recordBreakerEvent, loadOpenBreaker } from "@/lib/jevLogs.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
+import { getComboFairness, hydrateComboFairness, FAIR_ERR_TURNS } from "open-sse/services/combo.js";
 import {
   DEFAULT_SYSTEMONE_ROUTER_MODEL,
   DEFAULT_SYSTEMONE_TIMEOUT_MS,
@@ -35,6 +36,22 @@ export const getJevBreakerState = () => ({
   open: Date.now() < breaker.openUntil, openUntil: breaker.openUntil || null,
   skipped: breaker.skipped, failStreak: breaker.fails,
 });
+
+/** Append the combo's measured reliability so Jev stops re-picking a model that keeps failing (e.g. 429). */
+export function addHealth(criteria, comboName) {
+  const s = comboName && getComboFairness(comboName);
+  if (!s) return criteria;
+  for (const m of Object.keys(criteria)) {
+    const st = s.members.get(m);
+    const runs = (st?.ok || 0) + (st?.fail || 0);
+    if (!st?.fail) continue;
+    const notes = [`fail rate ${Math.round((st.fail / runs) * 100)}% of ${runs} runs`];
+    if (st.errSeq != null && s.seq - st.errSeq <= FAIR_ERR_TURNS) notes.push("failed recently");
+    if (st.fail / runs >= 0.2) notes.push("unreliable");
+    criteria[m] = [criteria[m], ...notes].filter(Boolean).join("; ");
+  }
+  return criteria;
+}
 
 function cacheKey(body, models) {
   return createHash("sha256").update(JSON.stringify([extractPromptState(body), models])).digest("hex");
@@ -105,6 +122,7 @@ async function evaluate({
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
   log,
   timeoutMs = DEFAULT_SYSTEMONE_TIMEOUT_MS,
+  comboName = null,
 }, trace) {
   const targetModel = (typeof routerModel === "string" && routerModel.trim())
     ? routerModel.trim()
@@ -125,6 +143,8 @@ async function evaluate({
   // Profiles (role, cost tier, llm-stats scores) let Jev trade capability for cost.
   const criteria = { ...buildChoiceCriteria(models), ...(await getRoutingProfiles(models)) };
   if (Object.keys(criteria).length === 0) return null;
+  if (comboName) await hydrateComboFairness(comboName);
+  addHealth(criteria, comboName);
 
   try {
     const modelInfo = await getModelInfo(targetModel);
@@ -149,7 +169,7 @@ async function evaluate({
       questions: {
         route: {
           type: "choice",
-          instructions: "Pick the cheapest model whose role and scores fit the task. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. If this is a different task from the previous turn, prefer re-evaluating instead of reusing the prior pick. Prefer free < cheap < mid < premium; pick premium only at L3-L4 or when precision is required. Low confidence => pick the higher lane.",
+          instructions: "Pick the cheapest model whose role and scores fit the task. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. If this is a different task from the previous turn, prefer re-evaluating instead of reusing the prior pick. Prefer free < cheap < mid < premium; pick premium only at L3-L4 or when precision is required. Low confidence => pick the higher lane. Avoid models marked unreliable or failed recently.",
           criteria,
         },
       },
