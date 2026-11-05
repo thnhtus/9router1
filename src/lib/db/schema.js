@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -205,6 +205,54 @@ export const TABLES = {
       reason: "TEXT",
       until: "TEXT", // open only: when the pause ends
     },
+  },
+  // Universal Agent Memory (LangGraph-backed). Owner scoping supports multi-agent/multi-project sharing.
+  agentMemories: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      ownerType: "TEXT NOT NULL", // 'user' | 'agent' | 'team' | 'project'
+      ownerId: "TEXT NOT NULL",
+      type: "TEXT NOT NULL", // 'episodic' | 'semantic' | 'procedural' | 'preference' | 'working'
+      content: "TEXT NOT NULL",
+      metadata: "TEXT", // JSON
+      embedding: "TEXT", // JSON array
+      confidence: "REAL DEFAULT 1.0",
+      importance: "REAL DEFAULT 0.5",
+      version: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+      lastAccessedAt: "TEXT",
+      expiresAt: "TEXT",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_am_owner ON agentMemories(ownerType, ownerId)",
+      "CREATE INDEX IF NOT EXISTS idx_am_type ON agentMemories(type)",
+      "CREATE INDEX IF NOT EXISTS idx_am_created ON agentMemories(createdAt DESC)",
+    ],
+  },
+  memoryRelations: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      sourceId: "TEXT NOT NULL",
+      targetId: "TEXT NOT NULL",
+      relationType: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_mr_source ON memoryRelations(sourceId)",
+      "CREATE INDEX IF NOT EXISTS idx_mr_target ON memoryRelations(targetId)",
+    ],
+  },
+  memoryEvents: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      sessionId: "TEXT",
+      agent: "TEXT",
+      kind: "TEXT NOT NULL", // 'capture' | 'extract' | 'consolidate' | 'retrieve'
+      payload: "TEXT NOT NULL",
+      ts: "INTEGER NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_me_ts ON memoryEvents(ts DESC)"],
   },
 };
 

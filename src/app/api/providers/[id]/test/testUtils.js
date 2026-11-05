@@ -928,6 +928,14 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
       }
+      case "inception": {
+        const res = await fetchWithConnectionProxy("https://api.inceptionlabs.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "mercury-2", messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+        }, effectiveProxy);
+        return { valid: res.status !== 401 && res.status !== 403, error: res.status === 401 || res.status === 403 ? "Invalid API key" : null };
+      }
       case "sensenova": {
         const validateUrl = PROVIDERS.sensenova?.validateUrl || "https://token.sensenova.cn/v1/models";
         const res = await fetchWithConnectionProxy(validateUrl, {

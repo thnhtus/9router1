@@ -149,7 +149,7 @@ async function evaluate({
       questions: {
         route: {
           type: "choice",
-          instructions: "Which of these configured models is the most appropriate for this request? Prefer the cheapest model (free < cheap < mid < premium) whose role and scores fit the task; pick a premium model only when the request clearly needs it.",
+          instructions: "Pick the cheapest model whose role and scores fit the task. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. If this is a different task from the previous turn, prefer re-evaluating instead of reusing the prior pick. Prefer free < cheap < mid < premium; pick premium only at L3-L4 or when precision is required. Low confidence => pick the higher lane.",
           criteria,
         },
       },

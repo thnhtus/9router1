@@ -64,6 +64,8 @@ const DEFAULT_SETTINGS = {
   customPromptEnabled: false,
   customPrompt: "",
   pxpipeEnabled: false,
+  memoryEnabled: false,
+  memoryEmbeddingModel: "",
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,

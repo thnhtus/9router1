@@ -74,7 +74,7 @@ function SkillRow({ skill }) {
 
 export default function SkillsPage() {
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
+    <div className="mx-auto flex w-full flex-col gap-6">
       <Card padding="md">
         <div className="text-xs text-muted-foreground mb-2">Paste this to your AI:</div>
         <div className="px-3 py-2 rounded bg-muted font-mono text-[12px] text-foreground">

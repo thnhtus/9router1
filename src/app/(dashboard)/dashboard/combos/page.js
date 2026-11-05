@@ -807,6 +807,15 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                     <span className="material-symbols-outlined text-[13px] text-muted-foreground">tune</span>
                     <span className="font-medium">{policyLabel}</span>
                   </button>
+                  <button
+                    onClick={() => onSetStrategy({ shuffle: !strategy.shuffle })}
+                    aria-pressed={!!strategy.shuffle}
+                    className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition-colors ${strategy.shuffle ? "border-primary bg-primary/10 text-primary" : "border-border/70 text-muted-foreground hover:border-primary/50 hover:bg-primary/5"}`}
+                    title="Shuffle members each request; the router's pick still goes first"
+                  >
+                    <span className="material-symbols-outlined text-[13px]">shuffle</span>
+                    <span className="font-medium">Shuffle {strategy.shuffle ? "on" : "off"}</span>
+                  </button>
                   {routerModel && (
                     <button
                       onClick={() => onSetStrategy({ routerModel: "" })}

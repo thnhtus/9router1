@@ -15,6 +15,7 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { runWithAgentTag } from "open-sse/services/agentTag.js";
 import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, handleOrchestrateChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
@@ -28,15 +29,47 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { getRoutingProfiles, getModelTiers } from "@/lib/llmStats.js";
 import { augmentModelsWithSmartPool } from "open-sse/services/smartAutoPool.js";
 import { consumeEscalationBudget } from "open-sse/services/systemoneRouter.js";
+import { retrieveMemories } from "@/lib/db/repos/agentMemoriesRepo.js";
+import { embedText } from "@/lib/memory/embed.js";
+import { runMemoryLifecycle } from "open-sse/services/memoryGraph.js";
+
+// request -> memory block; computed once in handleChat, read by every handleSingleModelChat attempt.
+const memoryPrompts = new WeakMap();
+
+function lastUserText(body) {
+  const msgs = body?.messages || (Array.isArray(body?.input) ? body.input : []);
+  const m = [...msgs].reverse().find((x) => x?.role === "user");
+  const c = m?.content;
+  if (typeof c === "string") return c;
+  return Array.isArray(c) ? c.map((p) => p?.text || "").join(" ").trim() : "";
+}
+
+async function buildMemoryPrompt(body, apiKey) {
+  const query = lastUserText(body).slice(0, 4000);
+  if (!query) return "";
+  const items = await retrieveMemories({ ownerType: "agent", ownerId: apiKey, queryEmbedding: await embedText(query), topK: 8 });
+  let out = "Relevant memory:";
+  for (const m of items || []) {
+    const line = `\n- ${m.content}`;
+    if (out.length + line.length > 2000) break;
+    out += line;
+  }
+  return items?.length ? out : "";
+}
 
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export function handleChat(request, clientRawRequest = null) {
+  return runWithAgentTag(request.headers, () => handleChatInner(request, clientRawRequest));
+}
+
+async function handleChatInner(request, clientRawRequest = null) {
   let body;
   try {
     body = await request.json();
@@ -47,9 +80,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
-    const url = new URL(request.url);
+    let url = null;
+    try { url = new URL(request.url); } catch { url = null; }
     clientRawRequest = {
-      endpoint: url.pathname,
+      endpoint: url?.pathname || "",
       body,
       headers: Object.fromEntries(request.headers.entries())
     };
@@ -106,6 +140,16 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  // Agent memory: off by default; any failure leaves the request untouched.
+  if (settings.memoryEnabled && apiKey) {
+    try {
+      const mem = await buildMemoryPrompt(body, apiKey);
+      if (mem) memoryPrompts.set(request, mem);
+    } catch (e) {
+      log.warn("MEMORY", `retrieve skipped: ${e.message}`);
+    }
+  }
+
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
@@ -142,11 +186,13 @@ export async function handleChat(request, clientRawRequest = null) {
         judgeModel: comboStrategies[modelStr]?.judgeModel,
         plannerModel: comboStrategies[modelStr]?.judgeModel,
         tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
+        profiles: comboStrategy === "orchestrate" ? await getRoutingProfiles(comboModels) : undefined,
       });
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     const comboCfg = comboStrategies[modelStr] || {};
+    const forceModel = await resolveForcedLane(request, augmentedModels);
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
@@ -163,15 +209,15 @@ export async function handleChat(request, clientRawRequest = null) {
       fallbackPool,
       smartPolicy: comboCfg.smartPolicy || "smart",
       sessionSticky: comboCfg.sessionSticky !== false,
+      shuffle: comboCfg.shuffle === true,
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
       smartWaitMs: typeof comboCfg.smartWaitMs === "number" ? comboCfg.smartWaitMs : 1200,
+      forceModel,
       oneTurn: modelStr === "auto" ? {
         models: ["team", "council"],
         threshold: 0.4,
-        consume: async (choice) => {
-          const limit = choice === "team" ? 20 : 10;
-          return consumeEscalationBudget("auto", choice, limit);
-        },
+        // team is uncapped; council is capped at 10/day.
+        consume: async (choice) => choice !== "council" || consumeEscalationBudget("auto", choice, 10),
       } : null,
       resolveSmartChoice: comboStrategy === "smart"
         ? (b, m) => resolveSmartChoice({
@@ -251,6 +297,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           judgeModel: comboStrategies[modelStr]?.judgeModel,
           plannerModel: comboStrategies[modelStr]?.judgeModel,
           tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
+        profiles: comboStrategy === "orchestrate" ? await getRoutingProfiles(comboModels) : undefined,
         });
       }
 
@@ -273,6 +320,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         sessionId: nestedSessionId,
         smartPolicy: comboCfg.smartPolicy || "smart",
         sessionSticky: comboCfg.sessionSticky !== false,
+        shuffle: comboCfg.shuffle === true,
         confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
         smartWaitMs: typeof comboCfg.smartWaitMs === "number" ? comboCfg.smartWaitMs : 1200,
         resolveSmartChoice: comboStrategy === "smart"
@@ -357,8 +405,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      customPromptEnabled: !!chatSettings.customPromptEnabled,
-      customPrompt: chatSettings.customPrompt || "",
+      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request),
+      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", memoryPrompts.get(request)].filter(Boolean).join("\n\n"),
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
@@ -369,7 +417,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Per-provider user overrides (custom headers / connect timeout) from settings
       providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      sourceFormatOverride: (() => {
+        try { return request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null; }
+        catch { return null; }
+      })(),
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -384,7 +435,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      // Agent memory capture: fire-and-forget, never delays or fails the reply.
+      if (chatSettings.memoryEnabled && apiKey) {
+        runMemoryLifecycle({ ownerType: "agent", ownerId: apiKey, query: lastUserText(body) }, apiKey)
+          .catch((e) => log.warn("MEMORY", `capture skipped: ${e.message}`));
+      }
+      return result.response;
+    }
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
@@ -414,4 +472,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     return result.response;
   }
+}
+
+// User override: `x-jev-model: <combo member>` pins that model; `x-jev-lane: free|cheap|mid|premium`
+// pins the first combo member in that cost tier. Unknown values are ignored (Jev decides).
+export async function resolveForcedLane(request, models) {
+  const h = request?.headers;
+  const model = h?.get?.("x-jev-model")?.trim();
+  if (model && models.includes(model)) return model;
+  const lane = h?.get?.("x-jev-lane")?.trim().toLowerCase();
+  if (!lane) return null;
+  const tiers = await getModelTiers(models);
+  return models.find((m) => tiers[m] === lane) || null;
 }

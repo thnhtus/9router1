@@ -1,0 +1,31 @@
+export default {
+  id: "pollinations",
+  alias: "poll",
+  uiAlias: "poll",
+  hasFree: true,
+  display: {
+    name: "Pollinations",
+    icon: "smart_toy",
+    color: "#10B981",
+    textIcon: "PL",
+    website: "https://pollinations.ai",
+    notice: { apiKeyUrl: "https://enter.pollinations.ai" },
+  },
+  category: "freeTier",
+  transport: {
+    baseUrl: "https://gen.pollinations.ai/v1/chat/completions",
+    validateUrl: "https://gen.pollinations.ai/v1/models",
+  },
+  modelsFetcher: { url: "https://gen.pollinations.ai/v1/models", type: "openai" },
+  passthroughModels: true,
+  models: [
+    { id: "openai", name: "openai" },
+    { id: "openai-fast", name: "openai-fast" },
+    { id: "openai-large", name: "openai-large" },
+    { id: "qwen-coder", name: "qwen-coder" },
+    { id: "mistral", name: "mistral" },
+    { id: "deepseek", name: "deepseek" },
+    { id: "grok", name: "grok" },
+    { id: "gemini-flash-lite-3.1", name: "gemini-flash-lite-3.1" },
+  ],
+};

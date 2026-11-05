@@ -1,0 +1,31 @@
+export default {
+  id: "nara",
+  alias: "nara",
+  uiAlias: "nara",
+  hasFree: true,
+  display: {
+    name: "Nara Router",
+    icon: "smart_toy",
+    color: "#0F766E",
+    textIcon: "NR",
+    website: "https://bynara.id",
+    notice: { apiKeyUrl: "https://bynara.id" },
+  },
+  category: "freeTier",
+  transport: {
+    baseUrl: "https://router.bynara.id/v1/chat/completions",
+    validateUrl: "https://router.bynara.id/v1/models",
+  },
+  modelsFetcher: { url: "https://router.bynara.id/v1/models", type: "openai" },
+  passthroughModels: true,
+  models: [
+    { id: "agnes-2.5-flash", name: "agnes-2.5-flash" },
+    { id: "agnes-2.0-flash", name: "agnes-2.0-flash" },
+    { id: "laguna-s-2.1", name: "laguna-s-2.1" },
+    { id: "minimax-m3-free", name: "minimax-m3-free" },
+    { id: "mistral-large", name: "mistral-large" },
+    { id: "mistral-medium-3-5", name: "mistral-medium-3-5" },
+    { id: "qwen3.8-27b", name: "qwen3.8-27b" },
+    { id: "stepfun-3.7-flash", name: "stepfun-3.7-flash" },
+  ],
+};

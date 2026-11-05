@@ -71,7 +71,7 @@ function Stat({ label, value, unit, tone }) {
 
 Stat.propTypes = { label: PropTypes.string, value: PropTypes.node, unit: PropTypes.string, tone: PropTypes.string };
 
-export default function LiveQueue({ activeRequests = [], recentRequests = [], last10Minutes = [], errorProvider = "" }) {
+export default function LiveQueue({ activeRequests = [], recentRequests = [], last10Minutes = [], today = {}, errorProvider = "" }) {
   const [now, setNow] = useState(() => Date.now());
   const [samples, setSamples] = useState([]);
   const [seen, setSeen] = useState({});
@@ -95,16 +95,11 @@ export default function LiveQueue({ activeRequests = [], recentRequests = [], la
   }, []);
 
   const inFlight = activeRequests.reduce((n, r) => n + (r.count || 0), 0);
-  const full = last10Minutes.slice(0, -1); // current minute is partial
-  const throughput = full.length ? Math.round(d3.mean(full, (b) => b.requests || 0)) : 0;
-  const isOk = (r) => {
-    const s = (r.status || "").toLowerCase();
-    if (!s || s === "ok" || s === "success" || s.startsWith("200")) return true;
-    if (s.includes("fail") || s.includes("error")) return false;
-    return true;
-  };
-  const done = recentRequests.filter(isOk).length;
-  const failed = recentRequests.length - done;
+  // Throughput / done / failed are scoped to the full day session (all requests),
+  // not the recent-requests slice or the last-10-minute window.
+  const throughput = today.throughput ?? 0;
+  const done = today.done ?? 0;
+  const failed = today.failed ?? 0;
 
   const badge = errorProvider ? (
     <span role="status" className="inline-flex items-center gap-1.5 rounded-md bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
@@ -121,8 +116,8 @@ export default function LiveQueue({ activeRequests = [], recentRequests = [], la
       <dl className="mt-3 grid grid-cols-2 divide-border border-y border-border sm:grid-cols-4 sm:divide-x">
         <Stat label="In flight" value={inFlight} />
         <Stat label="Throughput" value={throughput} unit="/min" />
-        <Stat label="Done" value={done} unit=" recent" tone="text-success" />
-        <Stat label="Failed" value={failed} unit=" recent" tone={failed ? "text-danger" : ""} />
+        <Stat label="Done" value={done} unit=" today" tone="text-success" />
+        <Stat label="Failed" value={failed} unit=" today" tone={failed ? "text-danger" : ""} />
       </dl>
 
       <div className="px-4 py-3">
@@ -179,5 +174,11 @@ LiveQueue.propTypes = {
   })),
   recentRequests: PropTypes.array,
   last10Minutes: PropTypes.array,
+  today: PropTypes.shape({
+    done: PropTypes.number,
+    failed: PropTypes.number,
+    throughput: PropTypes.number,
+    total: PropTypes.number,
+  }),
   errorProvider: PropTypes.string,
 };

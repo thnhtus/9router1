@@ -58,7 +58,11 @@ export default function JevRouterCard() {
 
   const isJev = (name) => state?.strategies[name]?.fallbackStrategy === "smart";
 
+  // fusion/orchestrate combos run several models on purpose; Jev must not flatten them to one pick.
+  const isMulti = (name) => ["fusion", "orchestrate"].includes(state?.strategies[name]?.fallbackStrategy);
+
   const toggle = (name, on) => {
+    if (isMulti(name)) return;
     const next = { ...state.strategies };
     if (on) next[name] = { ...(next[name] || {}), fallbackStrategy: "smart", routerModel: model };
     else delete next[name]; // back to default "fallback"
@@ -100,7 +104,9 @@ export default function JevRouterCard() {
               {state.combos.map((c) => (
                 <li key={c.id} className="flex items-center justify-between gap-3 border-b border-border pb-2">
                   <span className="font-mono text-sm">{c.name} <span className="text-text-muted">({(c.models || []).length} models)</span></span>
-                  <Toggle checked={isJev(c.name)} onChange={(on) => toggle(c.name, on)} disabled={busy || !state.connected} aria-label={`Jev routing for ${c.name}`} />
+                  {isMulti(c.name)
+                    ? <Badge>{state.strategies[c.name].fallbackStrategy}</Badge>
+                    : <Toggle checked={isJev(c.name)} onChange={(on) => toggle(c.name, on)} disabled={busy || !state.connected} aria-label={`Jev routing for ${c.name}`} />}
                 </li>
               ))}
             </ul>

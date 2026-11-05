@@ -605,7 +605,7 @@ export default function ProxyPoolsPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <div className="mx-auto flex w-full flex-col gap-6">
         <CardSkeleton />
         <CardSkeleton />
       </div>
@@ -613,7 +613,7 @@ export default function ProxyPoolsPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="mx-auto flex w-full flex-col gap-6">
       {loadError && <ErrorState message="Couldn't load data. Check that the 9Router server is running, then retry." onRetry={fetchProxyPools} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">

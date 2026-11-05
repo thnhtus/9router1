@@ -44,12 +44,13 @@ function TimeAgo({ timestamp }) {
 
 function RecentRequests({ requests = [] }) {
   return (
-    <Card title="Recent Requests" className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
+    <Card title="Recent Requests" className="flex h-[480px] min-w-0 flex-col overflow-hidden lg:h-auto" padding="sm">
 
       {!requests.length ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">No requests yet.</div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        // Absolute scroller: rows don't grow the grid row, so height follows Provider topology
+        <div className="relative flex-1"><div className="absolute inset-0 overflow-y-auto">
           <table className="w-full min-w-[300px] border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-card">
               <tr className="border-b border-border">
@@ -67,11 +68,14 @@ function RecentRequests({ requests = [] }) {
                     <td className="py-1.5">
                       <span title={ok ? "OK" : "Failed"} className={`block size-1.5 rounded-full ${ok ? "bg-success" : "bg-danger"}`} />
                     </td>
-                    <td className="max-w-[120px] truncate py-1.5 font-mono" title={r.model}>{r.model}</td>
+                    <td className="max-w-[160px] py-1.5" title={r.seat ? `${r.model} · ${r.seat}` : r.model}>
+                      <div className="truncate font-mono">{r.model}</div>
+                      {r.seat && <div className="truncate text-[10px] text-muted-foreground">{r.seat}</div>}
+                    </td>
                     <td className="py-1.5 text-right whitespace-nowrap tabular-nums">
-                      {fmt(r.promptTokens)}
+                      <span className="font-semibold text-primary">{fmt(r.promptTokens)}</span>
                       <span className="text-muted-foreground"> / </span>
-                      {fmt(r.completionTokens)}
+                      <span className="font-semibold text-success">{fmt(r.completionTokens)}</span>
                     </td>
                     <td className="py-1.5 text-right text-muted-foreground whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
@@ -79,7 +83,7 @@ function RecentRequests({ requests = [] }) {
               })}
             </tbody>
           </table>
-        </div>
+        </div></div>
       )}
     </Card>
   );
@@ -90,6 +94,7 @@ const TABLE_OPTIONS = [
   { value: "account", label: "Usage by Account" },
   { value: "apiKey", label: "Usage by API Key" },
   { value: "endpoint", label: "Usage by Endpoint" },
+  { value: "agent", label: "Usage by Rig / Seat" },
 ];
 
 const PERIODS = [
@@ -187,6 +192,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             recentRequests: data.recentRequests,
             errorProvider: data.errorProvider,
             pending: data.pending,
+            today: data.today,
           };
         });
         if (hasLoadedStats.current) setLoading(false);
@@ -229,6 +235,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           activeRequests={stats.activeRequests || []}
           recentRequests={stats.recentRequests || []}
           last10Minutes={stats.last10Minutes || []}
+          today={stats.today || {}}
           errorProvider={stats.errorProvider || ""}
         />
       )}

@@ -25,7 +25,7 @@ const nextConfig = {
   // plugins by dynamic require, neither of which survives bundling.
   // wreq-js resolves its rust native binding by relative require paths from its own
   // package dir — bundling breaks those paths ("Failed to load native module").
-  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open", "@aws-sdk/credential-providers", "wreq-js"],
+  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open", "@aws-sdk/credential-providers", "wreq-js", "@langchain/langgraph", "@langchain/langgraph-checkpoint-sqlite", "@langchain/core", "zod"],
   turbopack: {
     root: tracingRoot
   },

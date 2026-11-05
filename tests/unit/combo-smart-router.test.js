@@ -332,7 +332,7 @@ describe("System One Smart Combo Router", () => {
       expect(calls[1]).toBe("cx/gpt-5-mini");
     });
 
-    it("falls back to default order when decision confidence is below confidenceThreshold", async () => {
+    it("first pick follows Jev even when confidence is below confidenceThreshold", async () => {
       const calls = [];
       const handleSingleModel = vi.fn(async (_body, model) => {
         calls.push(model);
@@ -358,8 +358,8 @@ describe("System One Smart Combo Router", () => {
       });
 
       expect(resolveSmartChoice).toHaveBeenCalledTimes(1);
-      // Because confidence 0.65 < threshold 0.8, preserved default order (cx/gpt-5-mini first)
-      expect(calls[0]).toBe("cx/gpt-5-mini");
+      // No sticky cache to protect on the first pick, so the threshold doesn't apply.
+      expect(calls[0]).toBe("ds/deepseek-v4");
     });
 
     it("supports strict lock policy: never calls router on subsequent turns", async () => {

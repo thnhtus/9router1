@@ -129,6 +129,6 @@ export default function UsageLinesChart({ period = "7d", dim = "model", title = 
 
 UsageLinesChart.propTypes = {
   period: PropTypes.string,
-  dim: PropTypes.oneOf(["model", "account", "apiKey", "endpoint"]),
+  dim: PropTypes.oneOf(["model", "account", "apiKey", "endpoint", "agent"]),
   title: PropTypes.string,
 };

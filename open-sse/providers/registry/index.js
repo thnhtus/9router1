@@ -148,6 +148,26 @@ import p151 from "./uc-web.js";
 import p152 from "./runcrate.js";
 import p153 from "./nace.js";
 import p154 from "./typesafe.js";
+import p155 from "./inception.js";
+import p156 from "./nara.js";
+import p157 from "./xkiro.js";
+import p158 from "./arcee-ai.js";
+import p159 from "./longcat.js";
+import p160 from "./agentrouter.js";
+import p161 from "./deepinfra.js";
+import p162 from "./nscale.js";
+import p163 from "./novita.js";
+import p164 from "./scaleway.js";
+import p165 from "./pollinations.js";
+import p166 from "./publicai.js";
+import p167 from "./inference-net.js";
+import p168 from "./reka.js";
+import p169 from "./uncloseai.js";
+import p170 from "./monsterapi.js";
+import p171 from "./stepfun.js";
+import p172 from "./baichuan.js";
+import p173 from "./sparkdesk.js";
+import p174 from "./bytez.js";
 export default [
   p0,
   p1,
@@ -296,4 +316,24 @@ export default [
   p152,
   p153,
   p154,
+  p155,
+  p156,
+  p157,
+  p158,
+  p159,
+  p160,
+  p161,
+  p162,
+  p163,
+  p164,
+  p165,
+  p166,
+  p167,
+  p168,
+  p169,
+  p170,
+  p171,
+  p172,
+  p173,
+  p174,
 ];

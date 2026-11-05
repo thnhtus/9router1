@@ -16,6 +16,10 @@ for (const entry of REGISTRY) {
   if (entry.alias) ALIAS_TO_PROVIDER_ID[entry.alias] = entry.id;
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
 }
+// UI badge token (e.g. incp) is shown as the model prefix, so it must route too; never override a real id/alias.
+for (const entry of REGISTRY) {
+  if (entry.uiAlias && !ALIAS_TO_PROVIDER_ID[entry.uiAlias]) ALIAS_TO_PROVIDER_ID[entry.uiAlias] = entry.id;
+}
 
 const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",

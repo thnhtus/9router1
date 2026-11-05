@@ -16,6 +16,9 @@ import {
   orderModelsByChoice,
   SMART_WAIT_MS,
 } from "./systemoneRouter.js";
+import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
+
+const fairnessKv = makeKv("comboFairness");
 
 const LATE = Symbol("late");
 
@@ -228,6 +231,98 @@ function normalizeStickyLimit(stickyLimit) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+export function shuffleModels(models) {
+  const out = [...models];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+// Per-combo member fairness, persisted in DB (kv scope "comboFairness") so it survives
+// restarts and is shared by instances. Every member is tracked: a member not tried for
+// FAIR_STALE_TURNS turns is promoted, a member that failed within FAIR_ERR_TURNS turns
+// is demoted to the end, the rest keep the incoming (shuffled + Jev-scored) order.
+// ok/fail counters are kept as the combo's model evaluation record.
+// ponytail: last-write-wins per combo; concurrent instances can lose a tick. Move to a
+// row-per-member table with atomic UPDATE if exact counts across instances matter.
+export const FAIR_STALE_TURNS = 3;
+export const FAIR_ERR_TURNS = 5;
+const comboFairness = new Map(); // comboName -> { seq, exploreSeq, members: Map(model -> { lastSeq, errSeq, ok, fail }) }
+
+const newFairness = () => ({ seq: 0, exploreSeq: 0, members: new Map() });
+
+/** Reload the combo's fairness state from DB (shared across instances); keeps memory on DB error. */
+export async function hydrateComboFairness(comboName) {
+  if (!comboName) return;
+  try {
+    const raw = await fairnessKv.get(comboName, null);
+    if (!raw) return;
+    const local = comboFairness.get(comboName);
+    if (local && local.seq > (raw.seq || 0)) return; // our unsaved state is newer
+    comboFairness.set(comboName, { seq: raw.seq || 0, exploreSeq: raw.exploreSeq || 0, members: new Map(Object.entries(raw.members || {})) });
+  } catch { /* fail open: in-memory state */ }
+}
+
+function persistFairness(comboName, s) {
+  fairnessKv.set(comboName, { seq: s.seq, exploreSeq: s.exploreSeq, members: Object.fromEntries(s.members) }).catch(() => {});
+}
+
+export function getComboFairness(comboName) {
+  return comboFairness.get(comboName) || null;
+}
+
+function fairnessState(comboName) {
+  let s = comboFairness.get(comboName);
+  if (!s) comboFairness.set(comboName, (s = newFairness()));
+  return s;
+}
+
+export function markComboMember(comboName, model, failed = false) {
+  const s = fairnessState(comboName);
+  const m = s.members.get(model) || {};
+  m.lastSeq = s.seq;
+  if (failed) { m.errSeq = s.seq; m.fail = (m.fail || 0) + 1; }
+  else { delete m.errSeq; m.ok = (m.ok || 0) + 1; }
+  s.members.set(model, m);
+  persistFairness(comboName, s);
+}
+
+/**
+ * Advance the combo's turn and reorder: stale first, recent errors last.
+ * `keepHead` (forced/sticky) always stays first.
+ * `softHead` (per-turn Jev pick) stays first unless it failed recently (then demoted) or
+ * this is an exploration turn: at most one turn per FAIR_STALE_TURNS lets stale members
+ * run ahead of it, so Jev is overridden rarely and predictably.
+ */
+export function fairnessOrdered(models, comboName, keepHead = null, softHead = null) {
+  const s = fairnessState(comboName);
+  s.seq += 1;
+  const hard = keepHead && models.includes(keepHead) ? keepHead : null;
+  const soft = !hard && softHead && models.includes(softHead) ? softHead : null;
+  const stale = [], ok = [], err = [];
+  let softFailed = false;
+  for (const m of models) {
+    if (m === hard) continue;
+    const st = s.members.get(m);
+    const failed = st?.errSeq != null && s.seq - st.errSeq <= FAIR_ERR_TURNS;
+    if (m === soft) { softFailed = failed; if (failed) err.push(m); continue; }
+    if (failed) err.push(m);
+    else if (!st || s.seq - st.lastSeq > FAIR_STALE_TURNS) stale.push(m);
+    else ok.push(m);
+  }
+  let head = hard ? [hard] : [];
+  if (soft && !softFailed) {
+    if (stale.length && s.seq - (s.exploreSeq || 0) > FAIR_STALE_TURNS) {
+      s.exploreSeq = s.seq;
+      stale.push(soft); // explore: stale members first, Jev pick right after them
+    } else head = [soft];
+  }
+  persistFairness(comboName, s);
+  return [...head, ...stale, ...ok, ...err];
+}
+
 function rotateModelsFromIndex(models, currentIndex) {
   const rotatedModels = [...models];
   for (let i = 0; i < currentIndex; i++) {
@@ -386,9 +481,15 @@ export async function handleComboChat({
   smartWaitMs = SMART_WAIT_MS,
   oneTurn = null,
   fallbackPool = [],
+  forceModel = null,
+  shuffle = false,
 }) {
+  // Shuffle first so equal-ranked members (and the no-answer fallback) vary per turn.
+  const fair = shuffle && (comboStrategy === "smart" || comboStrategy === "fallback");
+  if (fair) models = shuffleModels(models);
   let rotatedModels = models;
   let activeStickyModel = null;
+  let jevPick = null; // per-turn Jev choice: soft head for fairness
 
   if (comboStrategy === "smart") {
     // One-turn escalation targets (e.g. team/council): only run when Jev picks them, never
@@ -425,7 +526,11 @@ export async function handleComboChat({
       log.info("COMBO", `smart-router late decision → ${r.choice} for next turn (confidence: ${r.confidence})`);
     };
 
-    if (activeStickyModel && isStrict) {
+    if (forceModel && models.includes(forceModel)) {
+      // Forced lane (X-Jev-Lane / X-Jev-Model): skip Jev, pin the forced model first.
+      rotatedModels = pin(forceModel);
+      log.info("COMBO", `smart-router [forced] ${forceModel} (lane override)`);
+    } else if (activeStickyModel && isStrict) {
       // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
       rotatedModels = pin(activeStickyModel);
       log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
@@ -465,11 +570,13 @@ export async function handleComboChat({
             rotatedModels = pin(activeStickyModel);
             log.info("COMBO", `smart-router [smart-switch] retained prompt cache model "${activeStickyModel}"`);
           }
-        } else if (valid && !oneTurnSet.has(choice) && (conf === null || confident)) {
-          // No confidence reported = accept the choice (first pick has no cache to protect).
+        } else if (valid && !oneTurnSet.has(choice)) {
+          // First pick has no warm cache to protect, so Jev's choice always wins; the threshold
+          // only gates switching away from a sticky model (above).
           // Turn 1 or per-turn: evaluate System One to select initial model
           rotatedModels = orderModelsByChoice(models, smartResult);
           log.info("COMBO", `smart-router selected ${choice} (confidence: ${conf ?? "N/A"})`);
+          if (isPerTurn) jevPick = choice;
           if (!isPerTurn && sessionId) {
             setStickyComboModel(comboName, sessionId, choice);
             activeStickyModel = choice;
@@ -490,6 +597,16 @@ export async function handleComboChat({
   } else {
     // Apply rotation strategy if enabled
     rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+    if (forceModel && models.includes(forceModel)) rotatedModels = [forceModel, ...rotatedModels.filter((m) => m !== forceModel)];
+  }
+
+  // Fairness: stale members jump ahead, recently-failed ones drop to the end;
+  // forced/sticky model stays first so lane overrides and prompt cache hold.
+  // Per-turn: Jev's pick becomes the soft head (stays first unless stale exploration).
+  if (fair) {
+    await hydrateComboFairness(comboName);
+    const head = forceModel && models.includes(forceModel) ? forceModel : activeStickyModel;
+    rotatedModels = fairnessOrdered(rotatedModels, comboName, head, jevPick);
   }
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
@@ -559,6 +676,7 @@ export async function handleComboChat({
                   }
                   lastError = "Zero usable content";
                   lastStatus = 200;
+                  if (fair) markComboMember(comboName, modelStr, true);
                   trace.failed(i, 200, lastError);
                   continue;
                 }
@@ -569,12 +687,14 @@ export async function handleComboChat({
           }
 
           log.info("COMBO", `Model ${modelStr} succeeded`);
+          if (fair) markComboMember(comboName, modelStr);
           trace.answered(i);
           return result;
         }
 
         if (peeked.outcome === "content") {
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          if (fair) markComboMember(comboName, modelStr);
           trace.answered(i);
           return peeked.response;
         }
@@ -597,6 +717,7 @@ export async function handleComboChat({
         // Drain/close the discarded stream in the background so its usage logging still runs.
         peeked.response.body?.cancel?.().catch(() => {});
         lastError = `empty generation (${reasonLabel})`;
+        if (fair) markComboMember(comboName, modelStr, true);
         trace.failed(i, 200, lastError);
         if (!lastStatus) lastStatus = 502;
         continue;
@@ -650,6 +771,7 @@ export async function handleComboChat({
         lastError = errorText || String(result.status);
         if (!lastStatus) lastStatus = result.status;
         if (!requestScopedResult) requestScopedResult = result;
+        if (fair) markComboMember(comboName, modelStr, true);
         trace.failed(i, result.status, errorText);
         continue;
       }
@@ -666,6 +788,7 @@ export async function handleComboChat({
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
+      if (fair) markComboMember(comboName, modelStr, true);
       trace.failed(i, result.status, errorText);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
@@ -675,6 +798,7 @@ export async function handleComboChat({
       }
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
+      if (fair) markComboMember(comboName, modelStr, true);
       trace.failed(i, 500, lastError);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
@@ -979,17 +1103,24 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
 // Orchestrate tuning. Overridable per-combo via settings.comboStrategies[name].orchestrateTuning.
 // reviewRounds: planner checks worker results and resends rejected ones with feedback (capped at 2).
+// maxTokens: rough input-token budget (chars/4) for one orchestrated turn; 0 = unlimited.
 const ORCHESTRATE_DEFAULTS = {
   maxSubtasks: 4,
   plannerTimeoutMs: 60000,
   workerTimeoutMs: 120000,
   reviewRounds: 0,
+  maxTokens: 0,
 };
 
-function buildPlannerPrompt(max, workers) {
+// ponytail: chars/4 estimate, not a tokenizer; good enough for a budget guard.
+const estTokens = (v) => Math.ceil((typeof v === "string" ? v : JSON.stringify(v ?? "")).length / 4);
+
+// profiles: { model: "role: X; cost: tier; ..." | null } from llmStats, so the planner assigns by capability.
+function buildPlannerPrompt(max, workers, profiles = {}) {
+  const list = workers.map((w) => (profiles[w] ? `- ${w} (${profiles[w]})` : `- ${w}`)).join("\n");
   return [
     "You are the PLANNER of a multi-agent team. Decide whether the user's latest request benefits from being split into independent subtasks that worker models solve in parallel (research angles, separate components, alternatives to compare).",
-    `Available workers: ${workers.join(", ")}. Workers see ONLY their instruction, not this conversation, so put every needed fact into it. Never include secrets, API keys or credentials.`,
+    `Available workers (pick the one whose role fits; prefer cheaper ones for simple subtasks):\n${list}\nWorkers see ONLY their instruction, not this conversation, so put every needed fact into it. Never include secrets, API keys or credentials.`,
     `Reply with ONLY a JSON object: {"subtasks":[{"title":"...","worker":"one of the available workers","instruction":"self-contained instruction with all needed context"}]} using 2-${max} subtasks, or {"subtasks":[]} when the request is simple, conversational, or not parallelizable.`,
   ].join("\n");
 }
@@ -1066,7 +1197,7 @@ function buildSynthesisPrompt(results) {
  *
  * @param {Object} options - same shape as handleFusionChat; plannerModel falls back to models[0]
  */
-export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning }) {
+export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning, profiles }) {
   const workers = Array.isArray(models) ? models.filter(Boolean) : [];
   const planner = plannerModel && plannerModel.trim() ? plannerModel.trim() : workers[0];
   if (!planner) {
@@ -1087,34 +1218,85 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
     if (!res?.ok) return "";
     try { return extractPanelText(await res.clone().json()); } catch { return ""; }
   };
-  const runWorker = (s, feedback) =>
-    withTimeout(handleSingleModel(isolatedTurn(base, buildWorkerPrompt(s, feedback)), s.worker, true), cfg.workerTimeoutMs)
-      .then(async (res) => {
-        if (!res?.ok) { log.warn("ORCHESTRATE", `Worker ${s.worker} failed on "${s.title}"`, { status: res?.status }); return null; }
-        const text = extractPanelText(await res.clone().json().catch(() => null));
-        return text ? { ...s, text } : null;
-      });
+  // Budget: plan + synthesis each read the conversation once, each review round once more.
+  const budget = Number(cfg.maxTokens) || 0;
+  const reviewRounds = Math.min(Number(cfg.reviewRounds) || 0, 2);
+  const convCost = estTokens(base.messages || base.input || base.contents) * (2 + reviewRounds);
+  if (budget && convCost > budget) {
+    log.info("ORCHESTRATE", `Combo "${comboName}" over budget before planning (${convCost} > ${budget}), planner answers directly`);
+    return handleSingleModel(body, planner);
+  }
 
   // 1. Plan.
-  const subtasks = parsePlan(await askPlanner(buildPlannerPrompt(cfg.maxSubtasks, workers)), cfg.maxSubtasks, workers);
+  let subtasks = parsePlan(await askPlanner(buildPlannerPrompt(cfg.maxSubtasks, workers, profiles || {})), cfg.maxSubtasks, workers);
+  if (budget) {
+    let used = convCost;
+    subtasks = subtasks.filter((s) => (used += estTokens(s.instruction)) <= budget);
+  }
   log.info("ORCHESTRATE", `Combo "${comboName}" | planner=${planner} | subtasks=${subtasks.length}`);
   if (subtasks.length < 2) return handleSingleModel(body, planner);
 
+  // One trace attempt per subtask (Fallback Chain card); attempt model follows failover.
+  const trace = startComboTrace(comboName, "orchestrate", subtasks.map((s) => s.worker));
+  const callWorker = (i, s, worker, feedback) => {
+    trace.trying(i, worker);
+    return withTimeout(trace.run(i, () => handleSingleModel(isolatedTurn(base, buildWorkerPrompt(s, feedback)), worker, true)), cfg.workerTimeoutMs)
+      .then(async (res) => {
+        if (!res?.ok) {
+          const code = res?.__timeout ? 504 : res?.status ?? 500;
+          log.warn("ORCHESTRATE", `Worker ${worker} failed on "${s.title}"`, { status: code });
+          if (code === 429 || code === 503) markPanelCooldown(worker);
+          trace.failed(i, code, res?.__timeout ? "timeout" : res?.__error?.message);
+          return null;
+        }
+        const text = extractPanelText(await res.clone().json().catch(() => null));
+        if (!text) { trace.failed(i, 200, "empty"); return null; }
+        trace.answered(i, true);
+        return { ...s, worker, text };
+      });
+  };
+  // Next combo worker after `from` that is not cooling down; null when there is none.
+  const nextWorker = (from) => {
+    const start = workers.indexOf(from);
+    for (let k = 1; k < workers.length; k++) {
+      const w = workers[(start + k) % workers.length];
+      if (w !== from && !isPanelCoolingDown(w)) return w;
+    }
+    return null;
+  };
+  // Failover: a failed/timed-out worker gets one retry on the next worker.
+  const runWorker = async (i, s, feedback, worker = s.worker) => {
+    const r = await callWorker(i, s, worker, feedback);
+    if (r) return r;
+    const alt = nextWorker(worker);
+    return alt ? callWorker(i, s, alt, feedback) : null;
+  };
+
   // 2. Fan out to the assigned workers.
   const t0 = Date.now();
-  let results = (await Promise.all(subtasks.map((s) => runWorker(s)))).filter(Boolean);
+  const done = await Promise.all(subtasks.map((s, i) => runWorker(i, s).then((r) => r && { ...r, i })));
+  let results = done.filter(Boolean);
   log.info("ORCHESTRATE", `${results.length}/${subtasks.length} subtasks done in ${Date.now() - t0}ms`);
-  if (results.length === 0) return handleSingleModel(body, planner);
+  if (results.length === 0) { trace.end("failed"); return handleSingleModel(body, planner); }
 
-  // 3. Review: rejected results go back to the same worker once per round; a failed retry keeps the old result.
-  for (let round = 0; round < Math.min(Number(cfg.reviewRounds) || 0, 2); round++) {
+  // 3. Review: rejected results go back with feedback, to the same worker first, then to another
+  // worker on the second rejection. A failed retry keeps the old result.
+  const rejections = new Map();
+  for (let round = 0; round < reviewRounds; round++) {
     const retry = (parseJsonObject(await askPlanner(buildReviewPrompt(results)))?.retry || [])
       .filter((r) => Number.isInteger(r?.index) && results[r.index] && typeof r.feedback === "string");
     log.info("ORCHESTRATE", `Review round ${round + 1}: ${retry.length} rejected`);
     if (retry.length === 0) break;
-    const redone = await Promise.all(retry.map((r) => runWorker(results[r.index], r.feedback)));
-    retry.forEach((r, i) => { if (redone[i]) results[r.index] = redone[i]; });
+    const redone = await Promise.all(retry.map((r) => {
+      const prev = results[r.index];
+      const n = (rejections.get(prev.i) || 0) + 1;
+      rejections.set(prev.i, n);
+      const worker = n >= 2 ? nextWorker(prev.worker) || prev.worker : prev.worker;
+      return runWorker(prev.i, prev, r.feedback, worker).then((x) => x && { ...x, i: prev.i });
+    }));
+    retry.forEach((r, k) => { if (redone[k]) results[r.index] = redone[k]; });
   }
+  trace.end("answered");
 
   // 4. Synthesize (streams to client if requested).
   return handleSingleModel(appendUserTurn(body, buildSynthesisPrompt(results)), planner);

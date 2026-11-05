@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { handleOrchestrateChat } from "../../open-sse/services/combo.js";
+import { handleOrchestrateChat, clearPanelCooldown } from "../../open-sse/services/combo.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 
@@ -125,5 +125,52 @@ describe("orchestrate: assignment, isolation, review", () => {
     expect(final.model).toBe("p/brain");
     expect(final.body.messages.at(-1).content).toContain("fixed-a");
     expect(calls.filter((c) => c.model === "p/brain" && c.body.messages.at(-1).content.includes("REVIEWER"))).toHaveLength(1);
+  });
+});
+
+describe("orchestrate: profiles, failover, budget", () => {
+  const fail = (status) => ({ ok: false, status, clone() { return this; }, json: async () => ({}) });
+  const plan2 = JSON.stringify({ subtasks: [
+    { title: "A", worker: "p/w1", instruction: "do a" },
+    { title: "B", worker: "p/w2", instruction: "do b" },
+  ] });
+
+  it("lists worker profiles in the planner prompt", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("{}"));
+    await handleOrchestrateChat({
+      body: { messages: [{ role: "user", content: "Q" }] }, models: ["p/w1", "p/w2"], handleSingleModel, log,
+      plannerModel: "p/brain", profiles: { "p/w1": "role: coder; cost: free", "p/w2": null },
+    });
+    const prompt = handleSingleModel.mock.calls[0][0].messages.at(-1).content;
+    expect(prompt).toContain("- p/w1 (role: coder; cost: free)");
+    expect(prompt).toMatch(/- p\/w2\n|- p\/w2$/m);
+  });
+
+  it("fails over to the next worker and cools down a 429 worker", async () => {
+    clearPanelCooldown();
+    const calls = [];
+    const handleSingleModel = vi.fn(async (body, model) => {
+      calls.push(model);
+      const last = body.messages.at(-1).content;
+      if (model === "p/brain") return okResponse(last.includes("PLANNER") ? plan2 : "FINAL");
+      if (model === "p/w1") return fail(429);
+      return okResponse(`ok-${last.slice(-4)}`);
+    });
+    await handleOrchestrateChat({ body: { messages: [{ role: "user", content: "Q" }] }, models: ["p/w1", "p/w2"], handleSingleModel, log, plannerModel: "p/brain" });
+    expect(calls.filter((m) => m !== "p/brain").sort()).toEqual(["p/w1", "p/w2", "p/w2"]);
+    const final = handleSingleModel.mock.calls.at(-1)[0].messages.at(-1).content;
+    expect(final).toContain("ok-do a");
+    expect(final).toContain("ok-do b");
+    clearPanelCooldown();
+  });
+
+  it("answers directly when the conversation exceeds maxTokens", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("DIRECT"));
+    await handleOrchestrateChat({
+      body: { messages: [{ role: "user", content: "x".repeat(4000) }] }, models: ["p/w1", "p/w2"], handleSingleModel, log,
+      plannerModel: "p/brain", tuning: { maxTokens: 500 },
+    });
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+    expect(handleSingleModel.mock.calls[0][1]).toBe("p/brain");
   });
 });

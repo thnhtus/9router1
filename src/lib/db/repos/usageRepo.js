@@ -3,6 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { recordComboCost, getCurrentCombo } from "open-sse/services/comboTrace.js";
+import { getAgentTag } from "open-sse/services/agentTag.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -82,6 +83,7 @@ function aggregateEntryToDay(day, entry) {
   day.byAccount ||= {};
   day.byApiKey ||= {};
   day.byEndpoint ||= {};
+  day.byAgent ||= {};
 
   if (entry.provider) addToCounter(day.byProvider, entry.provider, vals);
 
@@ -89,6 +91,11 @@ function aggregateEntryToDay(day, entry) {
   addToCounter(day.byModel, modelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
 
   if (entry.combo) addToCounter(day.byCombo, entry.combo, { ...vals, meta: { rawModel: entry.combo } });
+
+  if (entry.agent) {
+    const { rig, seat } = entry.agent;
+    addToCounter(day.byAgent, `${rig || "-"}|${seat || "-"}`, { ...vals, meta: { rig, seat } });
+  }
 
   if (entry.connectionId) {
     addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
@@ -128,11 +135,12 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, meta FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
     recentRing.items = rows.reverse().map((r) => ({
       timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
       apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
       tokens: parseJson(r.tokens, {}),
+      agent: parseJson(r.meta, {}).agent || null,
     }));
   } catch {}
 }
@@ -228,6 +236,8 @@ export async function getActiveRequests() {
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
         status: e.status || "ok",
+        rig: e.agent?.rig || null,
+        seat: e.agent?.seat || null,
       };
     })
     .filter((e) => {
@@ -251,6 +261,7 @@ export async function saveRequestUsage(entry) {
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
     if (!entry.combo) entry.combo = getCurrentCombo();
+    entry.agent = getAgentTag();
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
     recordComboCost(entry.cost, entry.tokens);
 
@@ -293,7 +304,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           getCurrentCombo(), entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.agent ? { agent: entry.agent } : {}),
         ]
       );
 
@@ -406,7 +417,7 @@ export async function getUsageStats(period = "all") {
   const stats = {
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
-    byProvider: {}, byModel: {}, byCombo: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+    byProvider: {}, byModel: {}, byCombo: {}, byAccount: {}, byApiKey: {}, byEndpoint: {}, byAgent: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -492,6 +503,16 @@ export async function getUsageStats(period = "all") {
         stats.byModel[statsKey].cachedTokens += m.cachedTokens || 0;
         stats.byModel[statsKey].cost += m.cost || 0;
         if (dateKey > (stats.byModel[statsKey].lastUsed || "")) stats.byModel[statsKey].lastUsed = dateKey;
+      }
+
+      for (const [ak, a] of Object.entries(day.byAgent || {})) {
+        stats.byAgent[ak] ||= { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rig: a.rig, seat: a.seat, lastUsed: dateKey };
+        stats.byAgent[ak].requests += a.requests || 0;
+        stats.byAgent[ak].promptTokens += a.promptTokens || 0;
+        stats.byAgent[ak].completionTokens += a.completionTokens || 0;
+        stats.byAgent[ak].cachedTokens += a.cachedTokens || 0;
+        stats.byAgent[ak].cost += a.cost || 0;
+        if (dateKey > (stats.byAgent[ak].lastUsed || "")) stats.byAgent[ak].lastUsed = dateKey;
       }
 
       for (const [ck, c] of Object.entries(day.byCombo || {})) {
@@ -602,7 +623,7 @@ export async function getUsageStats(period = "all") {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? AND (status IS NULL OR (status NOT LIKE '%FAIL%' AND status NOT LIKE '%ERROR%'))`,
       [cutoff]
     );
 
@@ -686,6 +707,33 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+
+  // Day-session stats for Live Queue (throughput, done, failed over full local calendar day)
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const dayCutoff = startOfDay.toISOString();
+    const dayRows = db.all(
+      `SELECT status FROM usageHistory WHERE timestamp >= ? AND status NOT LIKE '%PENDING%'`,
+      [dayCutoff]
+    );
+    let done = 0;
+    let failed = 0;
+    for (const r of dayRows) {
+      const s = (r.status || "").toLowerCase();
+      if (s.includes("fail") || s.includes("error")) {
+        failed++;
+      } else {
+        done++;
+      }
+    }
+    const elapsedMinutes = Math.max(1, (Date.now() - startOfDay.getTime()) / 60000);
+    const throughput = Math.round((done + failed) / elapsedMinutes);
+    stats.today = { done, failed, throughput, total: done + failed };
+  } catch {
+    stats.today = { done: 0, failed: 0, throughput: 0, total: 0 };
+  }
+
   return stats;
 }
 
@@ -716,7 +764,11 @@ function rowSeries(series, r, names) {
   addSeries(series, "account", names.account(r.connectionId), tokens, cost);
   addSeries(series, "apiKey", names.apiKey(r.apiKey), tokens, cost);
   addSeries(series, "endpoint", r.endpoint || "Unknown", tokens, cost);
+  const ag = parseJson(r.meta, {}).agent;
+  if (ag) addSeries(series, "agent", agentLabel(ag.rig, ag.seat), tokens, cost);
 }
+
+const agentLabel = (rig, seat) => (seat && seat !== "-" ? `${rig || "-"} · ${seat}` : rig || "-");
 
 function daySeries(dayData, names) {
   const series = {};
@@ -729,6 +781,7 @@ function daySeries(dayData, names) {
   add("account", dayData?.byAccount, (k) => names.account(k));
   add("apiKey", dayData?.byApiKey, (k, m) => names.apiKey(m.apiKey ?? (k.startsWith("local-no-key|") ? null : k.split("|")[0])));
   add("endpoint", dayData?.byEndpoint, (k, m) => m.endpoint || k.split("|")[0]);
+  add("agent", dayData?.byAgent, (k) => agentLabel(...k.split("|")));
   return series;
 }
 
@@ -748,7 +801,7 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0, series: {} }));
 
     const rows = db.all(
-      `SELECT timestamp, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, meta FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -773,7 +826,7 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0, series: {} }));
 
     const rows = db.all(
-      `SELECT timestamp, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, meta FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -847,20 +900,49 @@ function formatLogDate(date = new Date()) {
 
 // Push a (possibly failed/pending) entry into the recent ring so the dashboard's
 // Live Queue can show done/failed counts. Successes are recorded via saveRequestUsage.
+// Failed/pending entries are also persisted to usageHistory so day-session stats
+// (throughput / done / failed) can be computed over the full day, not just the ring.
 export async function appendRequestLog(entry = {}) {
   try {
     const e = entry || {};
+    const timestamp = e.timestamp || new Date().toISOString();
+    const status = e.status || "ok";
+    const agent = e.agent || getAgentTag();
     pushToRing({
-      timestamp: e.timestamp || new Date().toISOString(),
+      timestamp,
       provider: e.provider || "",
       model: e.model || "",
       connectionId: e.connectionId || null,
       apiKey: e.apiKey || null,
       endpoint: e.endpoint || null,
       cost: 0,
-      status: e.status || "ok",
+      status,
       tokens: e.tokens || {},
+      agent,
     });
+    // Persist failed attempts to DB (successes go through saveRequestUsage) so
+    // day-session failed counts survive restarts and aren't limited to the ring.
+    const isFailed = /fail|error/i.test(status);
+    if (isFailed) {
+      const db = await getAdapter();
+      db.run(
+        `INSERT INTO usageHistory(timestamp, provider, model, combo, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          timestamp,
+          e.provider || null,
+          e.model || null,
+          getCurrentCombo(),
+          e.connectionId || null,
+          e.apiKey || null,
+          e.endpoint || null,
+          0, 0, 0,
+          status,
+          "{}",
+          stringifyJson(agent ? { agent } : {}),
+        ]
+      );
+    }
     scheduleStatsEvent("update", 250);
   } catch {}
 }

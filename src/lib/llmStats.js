@@ -197,6 +197,9 @@ export function suggestRole(entry, catalog) {
 export function buildProfile(modelId, entry, role, catalog) {
   const tier = costTier(modelId, entry);
   const parts = role ? [`role: ${role}`, `cost: ${tier}`] : [`cost: ${tier}`];
+  // Same L1–L4 scale as the route instruction in src/sse/services/systemoneRouter.js.
+  const fits = { free: "L1-L2", cheap: "L1-L2", mid: "L2-L3", premium: "L3-L4" }[tier];
+  if (fits) parts.push(`fits ${fits}`);
   if (tier !== "free" && entry?.inPrice != null) parts.push(`price $${entry.inPrice}/$${entry.outPrice ?? "?"} per 1M in/out`);
   const top = scoreRanks(entry, catalog).slice(0, 4);
   if (top.length) parts.push(`rank ${top.map(([k, p]) => `${k} top ${p}%`).join(", ")}`);

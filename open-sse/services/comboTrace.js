@@ -30,11 +30,15 @@ export function startComboTrace(combo, strategy, models) {
   return {
     // Run fn with attempt i as the usage target (cost lands even after the stream ends).
     run(i, fn) { return als.run({ run, i }, fn); },
-    trying(i) { t0 = Date.now(); Object.assign(run.attempts[i], { status: "trying", at: t0 }); },
+    // model: the attempt switched to another model (orchestrate worker failover).
+    trying(i, model) { t0 = Date.now(); Object.assign(run.attempts[i], { status: "trying", at: t0 }, model ? { model } : {}); },
     failed(i, code, reason) {
-      Object.assign(run.attempts[i], { status: "failed", code: code ?? null, reason: reason ? String(reason).slice(0, 200) : null, ms: Date.now() - t0 });
+      Object.assign(run.attempts[i], { status: "failed", code: code ?? null, reason: reason ? String(reason).slice(0, 200) : null, ms: Date.now() - (run.attempts[i].at ?? t0) });
     },
-    answered(i) { Object.assign(run.attempts[i], { status: "answered", ms: Date.now() - t0 }); end("answered"); },
+    // keepOpen: parallel attempts (orchestrate) where one answer does not end the run.
+    answered(i, keepOpen) { Object.assign(run.attempts[i], { status: "answered", ms: Date.now() - (run.attempts[i].at ?? t0) }); if (!keepOpen) end("answered"); },
+    // Close a run whose attempts ran in parallel (orchestrate).
+    end,
     // Returned without a usable answer from i (no-fallback error / all failed).
     finish(i, code, reason) { if (i != null && run.attempts[i]?.status === "trying") this.failed(i, code, reason); end("failed"); },
   };
