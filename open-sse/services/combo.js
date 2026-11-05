@@ -1183,6 +1183,64 @@ function buildSynthesisPrompt(results) {
   ].join("\n");
 }
 
+const TOOL_RESULT_THRESHOLD = 6000;
+const toolResultCache = new Map();
+
+function toolResultText(msg) {
+  if (typeof msg?.content === "string") return msg.content;
+  if (Array.isArray(msg?.content)) return msg.content.map((p) => p?.text || "").join("\n");
+  if (msg?.content != null) return JSON.stringify(msg.content);
+  return "";
+}
+
+async function summarizeOne(text, handleSingleModel, model) {
+  const prompt = [
+    "Summarize the following tool result for a planner agent.",
+    "Return ONLY JSON: {\"summary\":\"...\",\"keyFacts\":[\"...\"],\"verbatim\":[\"critical lines verbatim\"]}.",
+    "Keep error messages, stack traces, file paths, numbers and identifiers verbatim in `verbatim`.",
+    "If the summary is insufficient, the caller may request the full content by emitting [NEED_FULL:<handle>].",
+    "",
+    "=== TOOL RESULT ===",
+    text.slice(0, 40000),
+    "=== END ===",
+  ].join("\n");
+  try {
+    const res = await handleSingleModel({ messages: [{ role: "user", content: prompt }], stream: false }, model, true);
+    if (!res?.ok) return null;
+    const j = await res.clone().json().catch(() => null);
+    const txt = extractPanelText(j);
+    const parsed = parseJsonObject(txt);
+    if (parsed?.summary) return parsed;
+  } catch {}
+  return null;
+}
+
+async function summarizeLargeToolResults(body, handleSingleModel, model, log, sessionId = null) {
+  let clone;
+  try { clone = JSON.parse(JSON.stringify(body || {})); } catch { clone = body ? { ...body } : {}; }
+  const keys = ["messages", "input", "contents"];
+  for (const k of keys) {
+    const arr = clone?.[k];
+    if (!Array.isArray(arr)) continue;
+    for (let i = 0; i < arr.length; i++) {
+      const m = arr[i];
+      const t = toolResultText(m);
+      if (t.length <= TOOL_RESULT_THRESHOLD) continue;
+      const handle = `tr:${sessionId || "anon"}:${Date.now()}:${i}`;
+      toolResultCache.set(handle, t);
+      const parsed = await summarizeOne(t, handleSingleModel, model);
+      const replacement = parsed
+        ? `SUMMARY: ${parsed.summary}\nKEY FACTS: ${(parsed.keyFacts || []).join("; ")}\nVERBATIM:\n${(parsed.verbatim || []).join("\n")}\n[FULL CONTENT CACHED AS ${handle}; length=${t.length}]`
+        : `TOOL RESULT (truncated, full cached as ${handle}):\n${t.slice(0, 1500)}\n...\n${t.slice(-1500)}`;
+      if (typeof m.content === "string") m.content = replacement;
+      else if (Array.isArray(m.content)) m.content = [{ type: "text", text: replacement }];
+      else m.content = replacement;
+      log?.info?.("ORCHESTRATE", `Summarized large tool result ${t.length} -> ${replacement.length} (handle ${handle})`);
+    }
+  }
+  return clone;
+}
+
 /**
  * Handle an orchestrate combo: a planner splits the request into subtasks and assigns
  * each to a combo model (round-robin when it names none/an unknown one), workers solve
@@ -1197,7 +1255,7 @@ function buildSynthesisPrompt(results) {
  *
  * @param {Object} options - same shape as handleFusionChat; plannerModel falls back to models[0]
  */
-export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning, profiles }) {
+export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning, profiles, sessionId = null }) {
   const workers = Array.isArray(models) ? models.filter(Boolean) : [];
   const planner = plannerModel && plannerModel.trim() ? plannerModel.trim() : workers[0];
   if (!planner) {
@@ -1206,7 +1264,36 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
       { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
-  if (!isFreshUserTurn(body) || workers.length === 0) return handleSingleModel(body, planner);
+  if (!isFreshUserTurn(body) || workers.length === 0) {
+    // B-safe: summarize oversized tool results before the planner reads them,
+    // keeping verbatim anchors so critical details are not lost.
+    const summarized = await summarizeLargeToolResults(body, handleSingleModel, workers[0], log, sessionId);
+    let res = await handleSingleModel(summarized, planner);
+    // On-demand expansion: if planner asks for full raw via [NEED_FULL:handle],
+    // re-run once with that tool result restored in full.
+    try {
+      const data = await res.clone().json().catch(() => null);
+      const txt = extractPanelText(data) || "";
+      const m = txt.match(/\[NEED_FULL:([^\]]+)\]/);
+      if (m && toolResultCache.has(m[1])) {
+        const full = toolResultCache.get(m[1]);
+        const expanded = JSON.parse(JSON.stringify(summarized));
+        for (const k of ["messages", "input", "contents"]) {
+          const arr = expanded?.[k];
+          if (!Array.isArray(arr)) continue;
+          for (const msg of arr) {
+            const t = toolResultText(msg);
+            if (t.includes(m[1])) {
+              if (typeof msg.content === "string") msg.content = full;
+              else if (Array.isArray(msg.content)) msg.content = [{ type: "text", text: full }];
+            }
+          }
+        }
+        res = await handleSingleModel(expanded, planner);
+      }
+    } catch {}
+    return res;
+  }
 
   const cfg = { ...ORCHESTRATE_DEFAULTS, ...(tuning || {}) };
   const { tools, tool_choice, stream_options, ...rest } = body;

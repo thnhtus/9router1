@@ -187,6 +187,7 @@ async function handleChatInner(request, clientRawRequest = null) {
         plannerModel: comboStrategies[modelStr]?.judgeModel,
         tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
         profiles: comboStrategy === "orchestrate" ? await getRoutingProfiles(comboModels) : undefined,
+        sessionId,
       });
     }
 
@@ -298,6 +299,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           plannerModel: comboStrategies[modelStr]?.judgeModel,
           tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
         profiles: comboStrategy === "orchestrate" ? await getRoutingProfiles(comboModels) : undefined,
+        sessionId: nestedSessionId,
         });
       }
 
