@@ -1,10 +1,12 @@
 # Communication
 - Writes to the agent in Vietnamese; reply in Vietnamese. Confidence: 0.8
 - For investigation and audit tasks, wants a thorough search but a concise single combined report with file:line references. Confidence: 0.45
-- Gives terse go-aheads ("oke làm đi", "làm luôn", "tiếp tục", "đổi đi, rồi chạy luôn") to finish the listed remaining/follow-up work, so the agent should just do natural follow-ups instead of stopping to ask. Confidence: 0.75
+- Gives terse go-aheads ("oke làm đi", "làm luôn", "tiếp tục", "đổi đi, rồi chạy luôn", "oke làm hết đi") to finish the listed remaining/follow-up work, so the agent should just do natural follow-ups instead of stopping to ask. Confidence: 0.85
 - For multi-phase feature work, asks to spawn background workers to keep progressing ("spawn workers để làm liên tục"). Prefers the agent to wait for worker completion notifications rather than polling, then verify build/tests and report back. Confidence: 0.4
-- When the agent offers lettered options (e.g. "A — ...; B — ..."), the user answers with just the letter (e.g. "a"). Keep such choice prompts short and lettered so a one-letter reply is enough. Confidence: 0.35
+- When the agent offers lettered options (e.g. "A — ...; B — ..."), the user answers with just the letter (e.g. "a"), but may also ask for several options combined ("cả a và b luôn"), or say "làm hết đi" to implement all of them. Keep such choice prompts short and lettered so a one-letter reply is enough. Confidence: 0.45
+- When a proposed option has a stated risk, asks the agent to fix or mitigate that risk rather than drop the option. Is bothered by unclear or confusing trade-offs, so wants risks spelled out with concrete mitigations. Confidence: 0.35
 - Questions arbitrary choices ("tại sao phải ... combo này?"). Before changing config, check that the target fits, e.g. that a combo actually has models, and briefly explain why it was picked over the alternatives. Confidence: 0.35
 - In usage stats UI, keep input (prompt) token counts in `text-primary` bold and output (completion) token counts in `text-success` bold, consistent across components (e.g. OverviewCards, RecentRequests). Confidence: 0.4
 - Wants minimal, working code changes with no new dependencies. Confidence: 0.4
+- After finishing an implementation, asks the agent to smoke test it in a live run ("xong rồi smoke test thử", "smoke test các trường hợp có thể xảy ra đi") rather than stopping at build pass; wants multiple relevant scenarios/edge cases covered, not just one happy-path check. Confidence: 0.45
 - When a live test hits a blocker (e.g. a model provider out of credits), wants the agent to switch to a working alternative and finish the run rather than stop and report. Confidence: 0.4

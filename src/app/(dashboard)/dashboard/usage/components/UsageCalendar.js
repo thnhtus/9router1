@@ -66,7 +66,7 @@ export default function UsageCalendar() {
         if (!alive) return;
         const days = (Array.isArray(json) ? json : [])
           .filter((x) => x.date)
-          .map((x) => ({ date: x.date, tokens: x.tokens || 0, requests: x.requests || 0, cost: x.cost || 0, d: new Date(`${x.date}T00:00:00`) }));
+          .map((x) => ({ date: x.date, tokens: x.tokens || 0, promptTokens: x.promptTokens || 0, completionTokens: x.completionTokens || 0, cachedTokens: x.cachedTokens || 0, requests: x.requests || 0, cost: x.cost || 0, d: new Date(`${x.date}T00:00:00`) }));
         setState({ status: "ok", days });
       })
       .catch(() => alive && setState({ status: "error", days: [] }));
@@ -106,6 +106,11 @@ export default function UsageCalendar() {
               >
                 <div className="text-muted-foreground">{fmtDay(hover.d)}</div>
                 <div className="font-medium tabular-nums text-foreground">{cfg.full(hover[mode])}</div>
+                <div className="mt-0.5 flex gap-2 text-[10px] tabular-nums text-muted-foreground">
+                  <span className="text-primary">In {d3.format(",")(hover.promptTokens || 0)}</span>
+                  <span className="text-success">Out {d3.format(",")(hover.completionTokens || 0)}</span>
+                  <span>Cache {d3.format(",")(hover.cachedTokens || 0)}</span>
+                </div>
               </div>
             )}
           </div>
