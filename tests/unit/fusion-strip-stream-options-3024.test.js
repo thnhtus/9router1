@@ -13,7 +13,8 @@ function makeBody(extra = {}) {
     model: "combo/gemseek",
     stream: true,
     stream_options: { include_usage: true },
-    messages: [{ role: "user", content: "hi" }],
+    // L3-level prompt: L1/L2 skip the panel entirely (see getTaskLevel), so use one that fans out.
+    messages: [{ role: "user", content: "Compare Redis and Memcached for caching, explain the trade-offs" }],
     ...extra,
   };
 }
