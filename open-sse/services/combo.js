@@ -1022,6 +1022,7 @@ const FUSION_DEFAULTS = {
   minPanel: 2,             // answers needed before stragglers get a grace window
   stragglerGraceMs: 8000,  // wait this long for laggards once quorum is reached
   panelHardTimeoutMs: 90000, // absolute cap so one hung model can't stall forever
+  taskLevels: true,         // L1–L2 trivial turns skip the panel and answer with the judge alone
 };
 
 // Resolve a Response (or {__error}) within ms; the loser keeps running but is ignored.
