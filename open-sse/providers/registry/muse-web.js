@@ -17,9 +17,7 @@ export default {
   },
   category: "webCookie",
   authType: "cookie",
-  // No "llm": muse-chat stays API-reachable but is hidden from LLM lists —
-  // this provider is surfaced through the image/video media pages only.
-  serviceKinds: ["image", "video"],
+  serviceKinds: ["llm", "image", "video"],
   videoConfig: { executorDriven: true },
   authHint: "Paste your muse.ai cookies (hatch_sess=...; hatch_gw=...; hatch_vml=...; hatch_native_auth_device=...) from a logged-in muse.ai session",
   transport: {

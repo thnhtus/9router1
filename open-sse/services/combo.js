@@ -15,8 +15,10 @@ import {
   clearStickyComboSession,
   orderModelsByChoice,
   SMART_WAIT_MS,
+  extractPromptState,
 } from "./systemoneRouter.js";
 import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
+import { acquire, releaseOnBodyEnd } from "./modelSemaphore.js";
 
 const fairnessKv = makeKv("comboFairness");
 
@@ -24,6 +26,30 @@ const LATE = Symbol("late");
 
 // Wait at most waitMs for Jev so routing never blocks the request on it.
 // A late answer goes to onLate (to update the session sticky for the next turn).
+// Quick task-level heuristic (L1-L4) from prompt text only; no Jev call.
+// L1=greeting/trivial, L2=simple single-concern, L3=moderate, L4=high-stakes architecture.
+function getTaskLevel(body) {
+  // Classify the current turn only; earlier turns are joined with \n and would trip the multi-line rule.
+  // ponytail: regex levels; swap for Jev's L1-L4 (src/sse/services/systemoneRouter.js) if misrouting shows up.
+  const state = extractPromptState(body).split("[current] ").pop();
+  if (!state) return 3; // safe default
+  
+  const lower = state.toLowerCase();
+  const isTrivial = /^(hi|hello|hey|alo|chào|xin chào|ping|test|thanks|thank you|cảm ơn|ok|oke|copy|paste)[\s!.?]*$|^[\d\s+\-*/().=?]+$/i.test(state.trim());
+  if (isTrivial && state.length < 60) return 1;
+  
+  // L4: multi-line, high-stakes keywords, or irreversible
+  const hasMultiStep = (state.match(/\n\s*[-*\d]+\./g) || []).length >= 4;
+  const isHighStakes = /(migrat|refactor whole|toàn bộ|kiến trúc|architecture|database schema|irrevocable|production drop|dọn sạch|schema|migration|deploy)/i.test(lower);
+  if (hasMultiStep || isHighStakes) return 4;
+  
+  // L2: simple edit/fix or very short prompt
+  const isSimpleEdit = /\b(typo|rename|add one line)\b|đổi tên|sửa chính tả/i.test(lower);
+  if (isSimpleEdit && state.length <= 100) return 2;
+  
+  return 3; // L3: moderate feature or multi-step
+}
+
 function raceSmartChoice(promise, onLate, waitMs = SMART_WAIT_MS) {
   let timer;
   const timeout = new Promise((res) => { timer = setTimeout(() => res(LATE), waitMs); });
@@ -38,7 +64,7 @@ function raceSmartChoice(promise, onLate, waitMs = SMART_WAIT_MS) {
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
 // them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
 // where `response` is a faithful replay of the original stream (head buffer + live reader).
-async function peekComboResponse(result, log) {
+async function peekComboResponse(result) {
   const ct = (result.headers.get("content-type") || "").toLowerCase();
   if (!result.body || !ct.includes("text/event-stream")) return null;
   const peeked = await peekStreamForContent(result.body);
@@ -249,9 +275,11 @@ export function shuffleModels(models) {
 // row-per-member table with atomic UPDATE if exact counts across instances matter.
 export const FAIR_STALE_TURNS = 3;
 export const FAIR_ERR_TURNS = 5;
-const comboFairness = new Map(); // comboName -> { seq, exploreSeq, members: Map(model -> { lastSeq, errSeq, ok, fail }) }
+export const HEAD_STREAK_MAX = 3; // a model may lead the combo at most 3 turns in a row
+const STREAK_SESSIONS_MAX = 200; // ponytail: oldest session streaks dropped past this
+const comboFairness = new Map(); // comboName -> { seq, exploreSeq, streaks: { session -> { head, n } }, members: Map(model -> { lastSeq, errSeq, ok, fail }) }
 
-const newFairness = () => ({ seq: 0, exploreSeq: 0, members: new Map() });
+const newFairness = () => ({ seq: 0, exploreSeq: 0, streaks: {}, members: new Map() });
 
 /** Reload the combo's fairness state from DB (shared across instances); keeps memory on DB error. */
 export async function hydrateComboFairness(comboName) {
@@ -261,7 +289,9 @@ export async function hydrateComboFairness(comboName) {
     if (!raw) return;
     const local = comboFairness.get(comboName);
     if (local && local.seq > (raw.seq || 0)) return; // our unsaved state is newer
-    comboFairness.set(comboName, { seq: raw.seq || 0, exploreSeq: raw.exploreSeq || 0, members: new Map(Object.entries(raw.members || {})) });
+    // ponytail: streaks are per-process routing state and stay in memory — persisting them
+// polluted shared-DB consumers (tests, other sessions); fairness counts stay persisted.
+comboFairness.set(comboName, { seq: raw.seq || 0, exploreSeq: raw.exploreSeq || 0, streaks: {}, members: new Map(Object.entries(raw.members || {})) });
   } catch { /* fail open: in-memory state */ }
 }
 
@@ -321,6 +351,29 @@ export function fairnessOrdered(models, comboName, keepHead = null, softHead = n
   }
   persistFairness(comboName, s);
   return [...head, ...stale, ...ok, ...err];
+}
+
+/**
+ * Cap how many turns in a row one model answers (per session, or per combo without one):
+ * once the last answerer has HEAD_STREAK_MAX consecutive answers, reshuffle the whole order
+ * and send that model to the end. Returns the order unchanged otherwise.
+ */
+export function capHeadStreak(models, comboName, sessionId = null) {
+  const st = fairnessState(comboName).streaks[sessionId || "_"];
+  if (models.length < 2 || !st || st.n < HEAD_STREAK_MAX || !models.includes(st.head)) return models;
+  return [...shuffleModels(models.filter((m) => m !== st.head)), st.head];
+}
+
+/** Count a successful answer toward the model's consecutive-answer streak. */
+export function recordComboAnswer(comboName, sessionId, model) {
+  const s = fairnessState(comboName);
+  const key = sessionId || "_";
+  const st = s.streaks[key];
+  delete s.streaks[key]; // re-insert so key order = recency
+  s.streaks[key] = { head: model, n: st?.head === model ? st.n + 1 : 1 };
+  const keys = Object.keys(s.streaks);
+  for (let i = 0; i < keys.length - STREAK_SESSIONS_MAX; i++) delete s.streaks[keys[i]];
+  persistFairness(comboName, s);
 }
 
 function rotateModelsFromIndex(models, currentIndex) {
@@ -455,6 +508,7 @@ export function isZeroContentResponse(data) {
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback", "round-robin", or "smart"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {number} [options.maxConcurrency=0] - Round-robin only: max in-flight requests per member (0 = unlimited)
  * @param {boolean} [options.autoSwitch=true] - Capability auto-switching
  * @param {string|null} [options.sessionId=null] - Client session identifier for prompt cache retention
  * @param {string} [options.smartPolicy="smart"] - Policy: "smart" (adaptive ≥80%), "strict" (lock 1st model), "per-turn", or "custom"
@@ -483,7 +537,24 @@ export async function handleComboChat({
   fallbackPool = [],
   forceModel = null,
   shuffle = false,
+  maxConcurrency = 0,
 }) {
+  // Round-robin spreads load, so cap in-flight requests per member; a full member throws
+  // SEMAPHORE_BUSY into the catch below and the loop cascades to the next model.
+  if (comboStrategy === "round-robin" && maxConcurrency > 0) {
+    const inner = handleSingleModel;
+    handleSingleModel = async (b, m, ...rest) => {
+      // ponytail: fail fast (no queue) so a full member cascades at once; if every member
+      // is full the combo returns busy. Add a short wait on the last member if that bites.
+      const release = await acquire(m, { max: maxConcurrency, maxQueue: 0 });
+      try {
+        const res = await inner(b, m, ...rest);
+        if (res?.ok) return releaseOnBodyEnd(res, release);
+        release();
+        return res;
+      } catch (e) { release(); throw e; }
+    };
+  }
   // Shuffle first so equal-ranked members (and the no-answer fallback) vary per turn.
   const fair = shuffle && (comboStrategy === "smart" || comboStrategy === "fallback");
   if (fair) models = shuffleModels(models);
@@ -609,6 +680,18 @@ export async function handleComboChat({
     rotatedModels = fairnessOrdered(rotatedModels, comboName, head, jevPick);
   }
 
+  // A model may answer at most HEAD_STREAK_MAX turns in a row; then reshuffle and move the
+  // session sticky to the new head so the following turns stick to it instead.
+  if (comboStrategy === "smart" && !(forceModel && models.includes(forceModel))) {
+    if (!fair) await hydrateComboFairness(comboName);
+    const before = rotatedModels[0];
+    rotatedModels = capHeadStreak(rotatedModels, comboName, sessionId);
+    if (rotatedModels[0] !== before && before) {
+      log.info("COMBO", `answer streak cap: hit ${HEAD_STREAK_MAX} in a row → reshuffled, now ${rotatedModels[0]}`);
+      if (activeStickyModel && sessionId) setStickyComboModel(comboName, sessionId, rotatedModels[0]);
+    }
+  }
+
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
     const required = detectRequiredCapabilities(body);
@@ -689,6 +772,7 @@ export async function handleComboChat({
           log.info("COMBO", `Model ${modelStr} succeeded`);
           if (fair) markComboMember(comboName, modelStr);
           trace.answered(i);
+          if (comboStrategy === "smart") recordComboAnswer(comboName, sessionId, modelStr);
           return result;
         }
 
@@ -696,6 +780,7 @@ export async function handleComboChat({
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
           if (fair) markComboMember(comboName, modelStr);
           trace.answered(i);
+          if (comboStrategy === "smart") recordComboAnswer(comboName, sessionId, modelStr);
           return peeked.response;
         }
 
@@ -1035,7 +1120,15 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // Opt-in (fusionTuning.freshTurnsOnly): in an agent tool loop the panel already deliberated
   // on the user turn, so tool-result steps go to the judge alone instead of re-running the panel.
   if (cfg.freshTurnsOnly && !isFreshUserTurn(body)) return handleSingleModel(body, judge);
-  log.info("FUSION", `Combo "${comboName}" | panel=${panel.length} [${panel.join(", ")}] | judge=${judge} | quorum=${minPanel}`);
+  
+  // Opt-in (fusionTuning.taskLevels): L1–L2 trivial tasks answer with the judge alone, no panel.
+  const level = getTaskLevel(body);
+  if (cfg.taskLevels && level <= 2) {
+    log.info("FUSION", `Combo "${comboName}" L${level} simple task: skipping panel, judge="${judge}" only`);
+    return handleSingleModel(body, judge);
+  }
+  
+  log.info("FUSION", `Combo "${comboName}" L${level} | panel=${panel.length} [${panel.join(", ")}] | judge=${judge} | quorum=${minPanel}`);
 
   // 1. Fan out to the panel in parallel: non-streaming, tools stripped (we want prose).
   const { tools, tool_choice, stream_options, ...rest } = body;
@@ -1105,7 +1198,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 // reviewRounds: planner checks worker results and resends rejected ones with feedback (capped at 2).
 // maxTokens: rough input-token budget (chars/4) for one orchestrated turn; 0 = unlimited.
 const ORCHESTRATE_DEFAULTS = {
-  maxSubtasks: 4,
+  maxSubtasks: 6,
   plannerTimeoutMs: 60000,
   workerTimeoutMs: 120000,
   reviewRounds: 0,
@@ -1264,6 +1357,13 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
       { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
+  
+  // Scale subtasks by task level: L1–L2 no split, L3 = maxSubtasks, L4 = 2x. Workers are
+  // assigned round-robin, so more subtasks than workers still spreads load across every model.
+  const level = getTaskLevel(body);
+  const cfg = { ...ORCHESTRATE_DEFAULTS, ...(tuning || {}) };
+  cfg.maxSubtasks = level <= 2 ? 1 : level >= 4 ? cfg.maxSubtasks * 2 : cfg.maxSubtasks;
+  
   if (!isFreshUserTurn(body) || workers.length === 0) {
     // B-safe: summarize oversized tool results before the planner reads them,
     // keeping verbatim anchors so critical details are not lost.
@@ -1295,7 +1395,7 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
     return res;
   }
 
-  const cfg = { ...ORCHESTRATE_DEFAULTS, ...(tuning || {}) };
+
   const { tools, tool_choice, stream_options, ...rest } = body;
   const base = { ...rest, stream: false };
   if (Array.isArray(base.messages)) base.messages = flattenToolHistory(base.messages);

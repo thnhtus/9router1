@@ -30,6 +30,18 @@ describe("fusion combo", () => {
     expect(handleSingleModel.mock.calls[0][1]).toBe("p/only");
   });
 
+  it("skips the panel for a trivial (L1) turn and asks the judge alone", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("hey"));
+    await handleFusionChat({
+      body: { messages: [{ role: "user", content: "hello" }] },
+      models: ["p/a", "p/b"],
+      judgeModel: "p/judge",
+      handleSingleModel,
+      log,
+    });
+    expect(handleSingleModel.mock.calls.map((c) => c[1])).toEqual(["p/judge"]);
+  });
+
   it("fans out to the panel then routes a synthesis turn to the judge", async () => {
     const seen = [];
     const handleSingleModel = vi.fn(async (body, model, isPanel) => {

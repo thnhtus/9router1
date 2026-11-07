@@ -87,13 +87,11 @@ export default function CombosPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const { copied, copy } = useCopyToClipboard();
 
-  useEffect(() => {
-    fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drop stale selection when the combo list changes (delete / refresh).
   useEffect(() => {
     const alive = new Set(combos.map((c) => c.id));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIds((prev) => prev.filter((id) => alive.has(id)));
   }, [combos]);
 
@@ -219,6 +217,10 @@ export default function CombosPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const handleSetCapacityAdapter = async (next) => {
     setCapacityAdapter(next);
@@ -769,6 +771,26 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                   </button>
                 )}
               </div>
+            )}
+            {/* Round-robin: per-member concurrency cap (blank/0 = unlimited) */}
+            {current === "round-robin" && (
+              <label className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="font-medium">Max in-flight / model</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  defaultValue={strategy.maxConcurrency || ""}
+                  placeholder="∞"
+                  onBlur={(e) => {
+                    const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                    if (n !== (strategy.maxConcurrency || 0)) onSetStrategy({ maxConcurrency: n });
+                  }}
+                  className="w-14 rounded border border-border/70 bg-transparent px-1.5 py-0.5 font-mono text-[11px] text-foreground focus:border-primary focus:outline-none"
+                  aria-label="Max concurrent requests per combo member"
+                  title="When a member is full, the request moves to the next member"
+                />
+              </label>
             )}
             {/* Smart: System One router picker and policy modal trigger */}
             {isSmart && (() => {
@@ -1326,6 +1348,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isOpen) fetchModalData();
   }, [isOpen]);
 

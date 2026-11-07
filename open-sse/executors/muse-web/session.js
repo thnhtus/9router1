@@ -86,18 +86,18 @@ export function missingSessionCookies(pairs) {
   return SESSION_COOKIES.filter((name) => !names.has(name));
 }
 
-/** Playwright addCookies() shape for the .muse.ai domain. */
+/**
+ * Playwright addCookies() shape for the .muse.ai domain.
+ * `__Host-` cookies must be host-only and cannot carry `path` alongside `url`;
+ * a `domain` field makes Chrome reject the whole batch with "Invalid cookie fields".
+ */
 export function toMuseCookies(header) {
-  return parseCookiePairs(header).map(({ name, value }) => ({
-    name,
-    value,
-    domain: ".muse.ai",
-    path: "/",
-    secure: true,
-    httpOnly: false,
-    sameSite: "Lax",
-    expires: -1,
-  }));
+  return parseCookiePairs(header).map(({ name, value }) => {
+    const base = { name, value, secure: true, httpOnly: false, sameSite: "Lax", expires: -1 };
+    return name.startsWith("__Host-")
+      ? { ...base, url: SITE }
+      : { ...base, domain: ".muse.ai", path: "/" };
+  });
 }
 
 function readSetCookies(response) {

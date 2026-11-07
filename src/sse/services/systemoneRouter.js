@@ -73,6 +73,12 @@ function cacheKey(body, models) {
  * @param {number} [opts.timeoutMs=DEFAULT_SYSTEMONE_TIMEOUT_MS] - Hard ceiling for router evaluation
  * @returns {Promise<{ choice: string, confidence: number|null, probabilities: Record<string, number>|null } | null>}
  */
+const TRIVIAL_RE = /^(hi|hello|hey|alo|chào|xin chào|ping|test|thanks|thank you|cảm ơn|ok|oke)[\s!.?]*$|^[\d\s+\-*/().=?]+$/i;
+// Greeting or bare arithmetic only, single turn (no [earlier] context): anything else goes to Jev.
+export function isTrivialPrompt(state) {
+  return typeof state === "string" && state.length < 60 && !state.includes("[earlier]") && TRIVIAL_RE.test(state.trim());
+}
+
 export async function resolveSmartChoice(opts) {
   if (!Array.isArray(opts?.models) || opts.models.length <= 1) return null;
   const key = cacheKey(opts.body, opts.models);
@@ -135,6 +141,13 @@ async function evaluate({
     trace.error = "empty prompt state";
     return null;
   }
+
+  // ponytail: greeting/arithmetic-only fast path skips the ~340ms (p50) Jev call; widen TRIVIAL_RE if logs show more cheap repeats.
+  if (models.includes("worker") && isTrivialPrompt(baseState)) {
+    trace.fastPath = true;
+    return { choice: "worker", confidence: 0.95, probabilities: { worker: 0.95 }, rationale: "fast-path: trivial prompt" };
+  }
+
   const hints = [];
   if ((baseState.match(/\n\s*[-*\d]+\./g) || []).length >= 4) hints.push("multi-step task");
   if (/(migrat|refactor whole|toàn bộ|kiến trúc|architecture|database schema|irrevocable|production drop|dọn sạch)/i.test(baseState)) hints.push("high-stakes/irreversible");
@@ -169,7 +182,7 @@ async function evaluate({
       questions: {
         route: {
           type: "choice",
-          instructions: "Pick the cheapest model whose role and scores fit the task. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. If this is a different task from the previous turn, prefer re-evaluating instead of reusing the prior pick. Prefer free < cheap < mid < premium; pick premium only at L3-L4 or when precision is required. Low confidence => pick the higher lane. Avoid models marked unreliable or failed recently.",
+          instructions: "Pick the best fitting model whose role and scores match the task complexity. Balance cost with model variety: do not default to the single cheapest option when multiple models fit. Compare models from every provider on equal terms (Claude, GPT, Gemini, GLM, DeepSeek, Mistral, Grok, free/open models); do not favor one provider family by default. A model with missing profile fields is not disqualified; judge it on the info given and its fit for the level. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. Avoid models marked unreliable or failed recently.",
           criteria,
         },
       },

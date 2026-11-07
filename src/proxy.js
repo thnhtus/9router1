@@ -19,6 +19,10 @@ export default async function proxy(request) {
   // valid dashboard session: a forged 9r_mimo_login cookie (client-controlled
   // header, unsigned payload) must never turn the app into an unauthenticated
   // forwarder. No URL-carried session — it would leak the jar via history/logs/Referer.
+  const headless = process.env.OMNIROUTE_HEADLESS === "1" || process.env.OMNIROUTE_HEADLESS === "true" || process.argv.includes("--headless");
+  if (headless && (pathname.startsWith("/dashboard") || pathname.startsWith("/api/cli-agents") || pathname.startsWith("/api/skills-runtime") || pathname.startsWith("/api/cloud-agents"))) {
+    return new Response(JSON.stringify({ error: "Disabled in Headless mode (OMNIROUTE_HEADLESS=1)" }), { status: 503, headers: { "content-type": "application/json" } });
+  }
   const cookies = request.headers.get("cookie") || "";
   const hasSessionCookie = cookies.includes("9r_mimo_login=");
   const { pathname } = request.nextUrl;

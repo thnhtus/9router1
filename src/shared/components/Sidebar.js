@@ -52,6 +52,10 @@ const navItems = [
   { href: "/dashboard/model-stats", label: "Model Stats", icon: "leaderboard" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/cli-agents", label: "CLI Agents", icon: "smart_toy" },
+  { href: "/dashboard/cloud-agents", label: "Cloud Agents", icon: "cloud" },
+  { href: "/dashboard/skills-runtime", label: "Skills (Runtime)", icon: "extension" },
+  { href: "/dashboard/agent-bridge", label: "Agent Bridge", icon: "hub" },
 ];
 
 const debugItems = [

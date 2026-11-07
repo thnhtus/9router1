@@ -17,7 +17,7 @@ describe("combo shuffle", () => {
       const tried = [];
       await handleComboChat({
         body: { messages: [{ role: "user", content: "hi" }] }, models: ["a", "b", "c", "d"], log,
-        comboName: `s${i}`, comboStrategy: "smart", shuffle: true, autoSwitch: false,
+        comboName: `s${i}-${Math.random()}`, comboStrategy: "smart", shuffle: true, autoSwitch: false,
         resolveSmartChoice: async () => ({ choice: "c", confidence: 0.9 }),
         handleSingleModel: async (_b, m) => { tried.push(m); return ok(); },
       });

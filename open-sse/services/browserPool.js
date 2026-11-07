@@ -260,16 +260,11 @@ function parseCookieString(raw, domain) {
       const name = pair.slice(0, eq).trim();
       const value = pair.slice(eq + 1).trim();
       if (!name || !value) return null;
-      return {
-        name,
-        value,
-        domain: domain.startsWith(".") ? domain : `.${domain}`,
-        path: "/",
-        expires: -1,
-        httpOnly: false,
-        secure: true,
-        sameSite: "Lax",
-      };
+      const base = { name, value, expires: -1, httpOnly: false, secure: true, sameSite: "Lax" };
+      // `__Host-` cookies must be host-only: Chrome rejects the whole batch
+      // ("Invalid cookie fields") if one carries a domain. `url` excludes `path`.
+      if (name.startsWith("__Host-")) return { ...base, url: `https://${domain.replace(/^\./, "")}` };
+      return { ...base, domain: domain.startsWith(".") ? domain : `.${domain}`, path: "/" };
     })
     .filter(Boolean);
 }

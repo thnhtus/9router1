@@ -220,6 +220,45 @@ export function resetAccountState(account) {
  * @param {string} errorText - Error message
  * @returns {object} Updated account with error state
  */
+// Network-route breaker: a transport failure (dead proxy/relay, DNS, reset) fails every
+// account on the same route identically, so skip the route instead of burning one
+// request per account. ponytail: in-memory, per-process; move to DB when multi-instance.
+const routeDownUntil = new Map();
+
+/** Route = provider + egress path (relay > proxy > direct). */
+export function networkRouteKey(provider, providerSpecificData) {
+  const p = providerSpecificData || {};
+  const via = p.vercelRelayUrl || (p.connectionProxyEnabled && p.connectionProxyUrl) || "direct";
+  return `${provider}::${via}`;
+}
+
+export function markRouteDown(key, ms = TRANSIENT_COOLDOWN_MS) {
+  routeDownUntil.set(key, Date.now() + ms);
+}
+
+export function isRouteDown(key) {
+  const until = routeDownUntil.get(key);
+  if (!until) return false;
+  if (until > Date.now()) return true;
+  routeDownUntil.delete(key);
+  return false;
+}
+
+export function clearRouteDown(key) {
+  routeDownUntil.delete(key);
+}
+
+const NETWORK_CODES = /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|EPIPE|UND_ERR_\w+)$/;
+
+/** Transport-level failure (no HTTP response), checking undici's wrapped `cause`. */
+export function isNetworkError(error) {
+  for (let e = error, d = 0; e && d < 3; e = e.cause, d++) {
+    if (NETWORK_CODES.test(e.code || "")) return true;
+    if (e.name === "TypeError" && e.message === "fetch failed") return true;
+  }
+  return false;
+}
+
 export function applyErrorState(account, status, errorText) {
   if (!account) return account;
 

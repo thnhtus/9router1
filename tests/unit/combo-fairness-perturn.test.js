@@ -50,3 +50,25 @@ describe("Jev criteria carry combo health", async () => {
     expect(crit.b).toBe("cost: free");
   });
 });
+
+describe("combo answer streak cap", async () => {
+  const { capHeadStreak, recordComboAnswer, HEAD_STREAK_MAX } = await import("../../open-sse/services/combo.js");
+  it("same model answers at most HEAD_STREAK_MAX turns in a row, counted on the real answerer", () => {
+    const c = `hs-${Math.random()}`;
+    const answers = [];
+    for (let i = 0; i < 20; i++) {
+      const order = capHeadStreak(["a", "b", "c", "d"], c);
+      const answer = order[0] === "b" ? order[1] : order[0]; // "b" always fails over to the next
+      recordComboAnswer(c, null, answer);
+      answers.push(answer);
+    }
+    let run = 1;
+    for (let i = 1; i < answers.length; i++) {
+      run = answers[i] === answers[i - 1] ? run + 1 : 1;
+      expect(run).toBeLessThanOrEqual(HEAD_STREAK_MAX);
+    }
+    expect(answers).not.toContain("b");
+    expect(answers.slice(0, HEAD_STREAK_MAX + 1)).toEqual(["a", "a", "a", answers[3]]);
+    expect(answers[3]).not.toBe("a");
+  });
+});

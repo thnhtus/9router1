@@ -35,7 +35,8 @@ export { isMissingBrowserExecutable } from "./browserExecutableCheck.js";
 
 const DEFAULT_MODEL_ID = "muse-chat";
 
-const PAGE_READY_TIMEOUT_MS = 45000;
+// Observed: a cold thread page takes ~30s to hydrate and show "Connected".
+const PAGE_READY_TIMEOUT_MS = 90000;
 const POLL_INTERVAL_MS = 300;
 // Polls with unchanged text before the reply counts as finished. FORCE fires
 // even while the stop button is still up (the UI occasionally leaves it stuck).

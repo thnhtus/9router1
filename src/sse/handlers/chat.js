@@ -21,6 +21,7 @@ import { handleComboChat, handleFusionChat, handleOrchestrateChat, detectRequire
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { networkRouteKey, isRouteDown, markRouteDown } from "open-sse/services/accountFallback.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import * as log from "../utils/logger.js";
@@ -209,6 +210,7 @@ async function handleChatInner(request, clientRawRequest = null) {
       sessionId,
       fallbackPool,
       smartPolicy: comboCfg.smartPolicy || "smart",
+      maxConcurrency: Number(comboCfg.maxConcurrency) || 0,
       sessionSticky: comboCfg.sessionSticky !== false,
       shuffle: comboCfg.shuffle === true,
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
@@ -279,6 +281,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const augmentedModels = await filterAdapterModels(keyAccess, capModels, comboModels);
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m) && capModels.includes(m));
 
+      const nestedSession = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+      const nestedSessionId = nestedSession?.sessionId || null;
       if (comboStrategy === "fusion" || comboStrategy === "orchestrate") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
         const multi = comboStrategy === "fusion" ? handleFusionChat : handleOrchestrateChat;
@@ -305,8 +309,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       const comboCfg = comboStrategies[modelStr] || {};
-      const nestedSession = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
-      const nestedSessionId = nestedSession?.sessionId || null;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
@@ -321,6 +323,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboStickyLimit,
         sessionId: nestedSessionId,
         smartPolicy: comboCfg.smartPolicy || "smart",
+        maxConcurrency: Number(comboCfg.maxConcurrency) || 0,
         sessionSticky: comboCfg.sessionSticky !== false,
         shuffle: comboCfg.shuffle === true,
         confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
@@ -370,6 +373,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
+    }
+
+    // Skip accounts whose egress route just failed at transport level — same proxy, same failure.
+    const routeKey = networkRouteKey(provider, credentials.providerSpecificData);
+    // noauth always resolves to the same virtual connection, so fail fast instead of looping.
+    if (isRouteDown(routeKey) && credentials.connectionId === "noauth") {
+      return errorResponse(HTTP_STATUS.BAD_GATEWAY, `[${provider}/${model}] Network route down, retry shortly`);
+    }
+    if (isRouteDown(routeKey)) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError ||= `Network route down (${provider})`;
+      lastStatus ||= HTTP_STATUS.BAD_GATEWAY;
+      continue;
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -455,6 +471,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         refreshedCredentials.accessToken, credentials.providerSpecificData
       );
       if (quotaResetMs) resetsAtMs = quotaResetMs;
+    }
+
+    // Transport failure is the route's fault, not the account's: trip the route, don't lock the account.
+    if (result.networkError) {
+      log.warn("FALLBACK", `⇄ ROUTE ${routeKey} DOWN (network) → NEXT ACCOUNT`);
+      markRouteDown(routeKey);
+      if (credentials.connectionId === "noauth") return result.response;
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = result.error;
+      lastStatus = result.status;
+      continue;
     }
 
     // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.

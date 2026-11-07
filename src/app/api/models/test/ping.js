@@ -165,6 +165,9 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     return { ok: true, latencyMs, error: null, status: res.status };
   }
 
+  // ponytail: per-provider ping budget. muse-web waits for its browser page to hydrate (up to 90s in the executor), so 15s always aborts it. Upgrade path: read timeout from provider config.
+  const PING_TIMEOUT_MS = { "muse-web": 120000 };
+  const timeoutMs = PING_TIMEOUT_MS[String(model).split("/")[0]] ?? 15000;
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
     method: "POST",
     headers,
@@ -178,7 +181,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const latencyMs = Date.now() - start;
 
