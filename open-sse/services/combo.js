@@ -288,10 +288,10 @@ export async function hydrateComboFairness(comboName) {
     const raw = await fairnessKv.get(comboName, null);
     if (!raw) return;
     const local = comboFairness.get(comboName);
-    if (local && local.seq > (raw.seq || 0)) return; // our unsaved state is newer
+    if (local && (local.seq > (raw.seq || 0) || Object.keys(local.streaks || {}).length)) return; // our unsaved state is newer (incl. live streaks)
     // ponytail: streaks are per-process routing state and stay in memory — persisting them
-// polluted shared-DB consumers (tests, other sessions); fairness counts stay persisted.
-comboFairness.set(comboName, { seq: raw.seq || 0, exploreSeq: raw.exploreSeq || 0, streaks: {}, members: new Map(Object.entries(raw.members || {})) });
+    // polluted shared-DB consumers (tests, other sessions); fairness counts stay persisted.
+    comboFairness.set(comboName, { seq: raw.seq || 0, exploreSeq: raw.exploreSeq || 0, streaks: { ...(local?.streaks || {}) }, members: new Map(Object.entries(raw.members || {})) });
   } catch { /* fail open: in-memory state */ }
 }
 
