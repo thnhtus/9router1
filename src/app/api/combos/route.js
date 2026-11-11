@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { getComboHealthMap } from "open-sse/services/combo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,8 @@ const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 export async function GET() {
   try {
     const combos = await getCombos();
-    return NextResponse.json({ combos });
+    const health = await getComboHealthMap();
+    return NextResponse.json({ combos, health });
   } catch (error) {
     console.log("Error fetching combos:", error);
     return NextResponse.json({ error: "Failed to fetch combos" }, { status: 500 });

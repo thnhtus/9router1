@@ -21,6 +21,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import AddToComboModal from "./AddToComboModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 import CustomConfigCard from "./CustomConfigCard";
@@ -68,7 +69,9 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [testingAllModels, setTestingAllModels] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [showAddToComboModal, setShowAddToComboModal] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
@@ -245,11 +248,11 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleDisableAll = async (ids) => {
+  const handleDisableAll = async (ids, title = "Disable All Models") => {
     if (!ids.length) return;
     setConfirmState({
-      title: "Disable All Models",
-      message: `Disable all ${ids.length} model(s)?`,
+      title,
+      message: `Disable ${ids.length} model(s)?`,
       onConfirm: async () => {
         setConfirmState(null);
         try {
@@ -1162,6 +1165,21 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // ponytail: 4 parallel pings client-side; reuses per-model endpoint so row states update live
+  const handleTestAllModels = async (modelIds) => {
+    if (testingAllModels || modelIds.length === 0) return;
+    setTestingAllModels(true);
+    setModelTestResults({});
+    const queue = [...modelIds];
+    const worker = async () => { while (queue.length) await handleTestModel(queue.shift()); };
+    try {
+      await handleTestModel(queue.shift()); // warm-up: avoid parallel token refresh
+      await Promise.all(Array.from({ length: 4 }, worker));
+    } finally {
+      setTestingAllModels(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1774,81 +1792,125 @@ export default function ProviderDetailPage() {
       <CustomConfigCard providerId={providerId} />
 
       {/* Models */}
-      <Card>
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold tracking-tight">
-              {"Available Models"}
-            </h2>
-            {providerThinkingLevels && (
-              <select
-                value={thinkingMode}
-                onChange={(e) => handleThinkingModeChange(e.target.value)}
-                title="Appends (level) suffix to copied model names"
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-              >
-                {providerThinkingLevels.map((opt) => (
-                  <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          {!isCompatible && (() => {
-            const allIds = [
+      {(() => {
+        const allIds = !isCompatible
+          ? [
               ...models,
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
-            const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
-            return (
-              <div className="flex gap-2">
-                {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
-                    Active All
-                  </Button>
-                )}
-                {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
-                    Disable All
-                  </Button>
-                )}
-              </div>
-            );
-          })()}
-        </div>
-        {!!modelsTestError && (
-          <div className="mb-3">
-            <p className="text-xs text-red-500 break-words">{modelsTestError}</p>
-            {/RegionError|hosted in China|regionNotAllowed/i.test(modelsTestError) && (() => {
-              const str = typeof modelsTestError === "string" ? modelsTestError : JSON.stringify(modelsTestError);
-              const linkMatch = str.match(/https:\/\/opencode\.ai\/workspace\/[^\s"')]+/);
-              const wrkMatch = str.match(/wrk_[0-9A-Za-z]+/);
-              const targetUrl = linkMatch
-                ? (linkMatch[0].endsWith("/go") ? linkMatch[0] : `${linkMatch[0]}/go`)
-                : wrkMatch
-                  ? `https://opencode.ai/workspace/${wrkMatch[0]}/go`
-                  : "https://opencode.ai";
+            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id)
+          : [];
+        const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+        const customIds = getProviderCustomModelRows({
+          customModels,
+          modelAliases,
+          providerAlias: providerStorageAlias,
+          builtInModels: isCompatible ? [] : models,
+          type: "llm",
+        }).map((m) => m.id);
+        const testIds = [...new Set([...customIds, ...activeIds])];
+        const availableComboModels = testIds.map((id) => `${providerDisplayAlias}/${id}`);
+        const failedIds = activeIds.filter((id) => modelTestResults[id] === "error");
 
-              return (
-                <div className="mt-1.5">
-                  <a
-                    href={targetUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 transition-colors"
-                  >
-                    <span>Allow China-hosted models</span>
-                    <span className="material-symbols-outlined text-[13px]">open_in_new</span>
-                  </a>
+        return (
+          <>
+            <Card>
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-base font-semibold tracking-tight">
+                    {"Available Models"}
+                  </h2>
+                  {providerThinkingLevels && (
+                    <select
+                      value={thinkingMode}
+                      onChange={(e) => handleThinkingModeChange(e.target.value)}
+                      title="Appends (level) suffix to copied model names"
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                    >
+                      {providerThinkingLevels.map((opt) => (
+                        <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-              );
-            })()}
-          </div>
-        )}
-        {providerId === "zed" && !!liveModelsError && (
-          <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
-        )}
-        {renderModelsSection()}
-      </Card>
+                <div className="flex flex-wrap gap-2">
+                  {availableComboModels.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon="layers"
+                      onClick={() => setShowAddToComboModal(true)}
+                      title="Add available models from this provider to an existing combo"
+                    >
+                      Add to Combo
+                    </Button>
+                  )}
+                  {!isCompatible && disabledModelIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                      Active All
+                    </Button>
+                  )}
+                  {!isCompatible && activeIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                      Disable All
+                    </Button>
+                  )}
+                  {!isCompatible && !testingAllModels && failedIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="error" onClick={() => handleDisableAll(failedIds, "Disable Failed Models")}>
+                      {`Disable Failed (${failedIds.length})`}
+                    </Button>
+                  )}
+                  {!isCompatible && (connections.length > 0 || isFreeNoAuth) && testIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon={testingAllModels ? "progress_activity" : "play_arrow"} onClick={() => handleTestAllModels(testIds)} disabled={testingAllModels}>
+                      {testingAllModels ? "Testing..." : "Test All"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {!!modelsTestError && (
+                <div className="mb-3">
+                  <p className="text-xs text-red-500 break-words">{modelsTestError}</p>
+                  {/RegionError|hosted in China|regionNotAllowed/i.test(modelsTestError) && (() => {
+                    const str = typeof modelsTestError === "string" ? modelsTestError : JSON.stringify(modelsTestError);
+                    const linkMatch = str.match(/https:\/\/opencode\.ai\/workspace\/[^\s"')]+/);
+                    const wrkMatch = str.match(/wrk_[0-9A-Za-z]+/);
+                    const targetUrl = linkMatch
+                      ? (linkMatch[0].endsWith("/go") ? linkMatch[0] : `${linkMatch[0]}/go`)
+                      : wrkMatch
+                        ? `https://opencode.ai/workspace/${wrkMatch[0]}/go`
+                        : "https://opencode.ai";
+
+                    return (
+                      <div className="mt-1.5">
+                        <a
+                          href={targetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 transition-colors"
+                        >
+                          <span>Allow China-hosted models</span>
+                          <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                        </a>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+              {providerId === "zed" && !!liveModelsError && (
+                <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
+              )}
+              {renderModelsSection()}
+            </Card>
+            {showAddToComboModal && (
+              <AddToComboModal
+                isOpen={showAddToComboModal}
+                onClose={() => setShowAddToComboModal(false)}
+                providerName={providerInfo.name}
+                availableModels={availableComboModels}
+              />
+            )}
+          </>
+        );
+      })()}
 
       {bulkActionModal}
 

@@ -153,6 +153,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
   // Handle finish_reason
   if (choice.finish_reason) {
+    state.finishReason = choice.finish_reason;
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
@@ -461,13 +462,16 @@ function collectCompletedOutputItems(state) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
-    emit("response.completed", {
-      type: "response.completed",
+    const isLength = state.finishReason === OPENAI_FINISH.LENGTH;
+    const eventType = isLength ? "response.incomplete" : "response.completed";
+    emit(eventType, {
+      type: eventType,
       response: {
         id: state.responseId,
         object: "response",
         created_at: state.created,
-        status: "completed",
+        status: isLength ? "incomplete" : "completed",
+        ...(isLength ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
         background: false,
         error: null,
         output: collectCompletedOutputItems(state),

@@ -72,7 +72,10 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   }
 
   const usage = responseBody.usage || {};
-  const status = choice.finish_reason === "tool_calls" ? "completed" : (choice.finish_reason === "stop" ? "completed" : (choice.finish_reason || "completed"));
+  const isLength = choice.finish_reason === "length";
+  const status = (choice.finish_reason === "tool_calls" || choice.finish_reason === "stop")
+    ? "completed"
+    : (isLength ? "incomplete" : (choice.finish_reason || "completed"));
 
   return {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
@@ -80,6 +83,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     created_at: responseBody.created || Math.floor(Date.now() / 1000),
     model: responseBody.model || "unknown",
     status,
+    ...(isLength ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
     background: false,
     error: null,
     output,

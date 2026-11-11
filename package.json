@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 20127",
-    "dev:used": "next dev --port 20128",
+    "dev:used": "NODE_OPTIONS=--max-old-space-size=1024 next dev --port 20128",
     "dev:webpack": "next dev --webpack --port 20127",
     "build": "next build --webpack",
     "postbuild": "node scripts/copy-standalone-assets.mjs",

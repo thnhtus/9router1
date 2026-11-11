@@ -48,6 +48,7 @@ export function addHealth(criteria, comboName) {
     const notes = [`fail rate ${Math.round((st.fail / runs) * 100)}% of ${runs} runs`];
     if (st.errSeq != null && s.seq - st.errSeq <= FAIR_ERR_TURNS) notes.push("failed recently");
     if (st.fail / runs >= 0.2) notes.push("unreliable");
+    if (st.failStreak) notes.push(`unreachable ${st.failStreak}x in a row`);
     criteria[m] = [criteria[m], ...notes].filter(Boolean).join("; ");
   }
   return criteria;

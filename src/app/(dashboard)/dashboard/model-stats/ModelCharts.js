@@ -34,7 +34,7 @@ function RankBars({ rows, metric }) {
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
     if (!rows.length) return;
-    const x = d3.scaleLinear().domain([0, d3.max(rows, (r) => r.v)]).range([M.left, width - M.right]).nice();
+    const x = d3.scaleLinear().domain([0, 100]).range([M.left, width - M.right]).nice();
     const y = d3.scaleBand().domain(rows.map((r) => r.id)).range([M.top, height - M.bottom]).padding(0.25);
 
     svg.append("g").attr("transform", `translate(0,${height - M.bottom})`).call(d3.axisBottom(x).ticks(5))
@@ -69,13 +69,13 @@ function ScoreVsPrice({ rows, metric }) {
     if (!pts.length) return;
     const [lo, hi] = d3.extent(pts, (p) => p.price);
     const x = d3.scaleLog().domain([lo / 1.5, hi * 1.5]).range([M.left, width - M.right]).nice();
-    const y = d3.scaleLinear().domain([0, d3.max(pts, (p) => p.v) * 1.08]).range([H - M.bottom, M.top]).nice();
+    const y = d3.scaleLinear().domain([0, 100]).range([H - M.bottom, M.top]).nice();
 
     svg.append("g").attr("transform", `translate(0,${H - M.bottom})`).call(d3.axisBottom(x).ticks(6, "$~g"))
       .call((g) => g.append("text").attr("x", width - M.right).attr("y", 34).attr("text-anchor", "end").attr("fill", "currentColor")
         .text("Input $ per 1M tokens (log, free shown at $0.01)"));
     svg.append("g").attr("transform", `translate(${M.left},0)`).call(d3.axisLeft(y).ticks(6))
-      .call((g) => g.append("text").attr("x", -M.left + 4).attr("y", M.top - 6).attr("text-anchor", "start").attr("fill", "currentColor").text(metric));
+      .call((g) => g.append("text").attr("x", -M.left + 4).attr("y", M.top - 6).attr("text-anchor", "start").attr("fill", "currentColor").text(`${metric} percentile`));
     svg.selectAll(".tick line").attr("stroke-opacity", 0.3);
 
     const tip = svg.append("text").attr("font-size", 12).attr("fill", "currentColor").attr("pointer-events", "none");
@@ -98,20 +98,20 @@ function ScoreVsPrice({ rows, metric }) {
 export default function ModelCharts({ models }) {
   const withStats = useMemo(() => models.filter((m) => m.stats), [models]);
   const metrics = useMemo(() => {
-    const count = d3.rollup(withStats.flatMap((m) => Object.keys(m.stats.scores || {})), (v) => v.length, (k) => k);
+    const count = d3.rollup(withStats.flatMap((m) => Object.keys(m.ranks || {})), (v) => v.length, (k) => k);
     return [...count].sort((a, b) => b[1] - a[1]).map(([k]) => k);
   }, [withStats]);
   const [metric, setMetric] = useState("");
   const active = metrics.includes(metric) ? metric : metrics[0];
 
   const rows = useMemo(() => withStats
-    .filter((m) => m.stats.scores?.[active] > 0)
-    .map((m) => ({ id: m.id, tier: m.tier, v: m.stats.scores[active], price: m.tier === "free" ? 0.01 : m.stats.inPrice }))
+    .filter((m) => m.ranks?.[active] > 0)
+    .map((m) => ({ id: m.id, tier: m.tier, v: m.ranks[active], price: m.tier === "free" ? 0.01 : m.stats.inPrice }))
     .sort((a, b) => b.v - a.v), [withStats, active]);
 
   if (!withStats.length) return null;
   return (
-    <Card title="Charts" subtitle={`${withStats.length} of ${models.length} available models matched in llm-stats. Colour = cost tier.`}>
+    <Card title="Charts" subtitle={`${withStats.length} of ${models.length} available models matched in llm-stats. Colour = cost tier. Scores are percentiles across the llm-stats catalog (100 = best).`}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label htmlFor="metric" className="text-sm text-text-muted">Metric</label>
         <select id="metric" value={active} onChange={(e) => setMetric(e.target.value)}

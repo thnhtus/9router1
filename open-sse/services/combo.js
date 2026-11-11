@@ -9,6 +9,7 @@ import { parseModel } from "./model.js";
 import { startComboTrace } from "./comboTrace.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
+import { continueOnLength, continueJsonOnLength } from "./lengthContinuation.js";
 import {
   getStickyComboModel,
   setStickyComboModel,
@@ -18,6 +19,7 @@ import {
   extractPromptState,
 } from "./systemoneRouter.js";
 import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
+import { getComboByName, updateCombo } from "../../src/lib/db/repos/combosRepo.js";
 import { acquire, releaseOnBodyEnd } from "./modelSemaphore.js";
 
 const fairnessKv = makeKv("comboFairness");
@@ -288,7 +290,7 @@ export async function hydrateComboFairness(comboName) {
     const raw = await fairnessKv.get(comboName, null);
     if (!raw) return;
     const local = comboFairness.get(comboName);
-    if (local && (local.seq > (raw.seq || 0) || Object.keys(local.streaks || {}).length)) return; // our unsaved state is newer (incl. live streaks)
+    if (local && ((raw.seq || 0) <= local.seq || Object.keys(local.streaks || {}).length)) return; // our unsaved state is newer (incl. live streaks)
     // ponytail: streaks are per-process routing state and stay in memory — persisting them
     // polluted shared-DB consumers (tests, other sessions); fairness counts stay persisted.
     comboFairness.set(comboName, { seq: raw.seq || 0, exploreSeq: raw.exploreSeq || 0, streaks: { ...(local?.streaks || {}) }, members: new Map(Object.entries(raw.members || {})) });
@@ -303,20 +305,59 @@ export function getComboFairness(comboName) {
   return comboFairness.get(comboName) || null;
 }
 
+/** Per-combo member health for the dashboard: { comboName: { model: { failStreak, removedAt } } }. */
+export async function getComboHealthMap() {
+  let persisted = {};
+  try { persisted = await fairnessKv.getAll(); } catch { /* memory only */ }
+  const out = {};
+  for (const name of new Set([...Object.keys(persisted), ...comboFairness.keys()])) {
+    const members = { ...(persisted[name]?.members || {}), ...Object.fromEntries(comboFairness.get(name)?.members || []) };
+    const health = {};
+    for (const [model, m] of Object.entries(members)) {
+      if (!m?.failStreak && !m?.removedAt) continue;
+      health[model] = { failStreak: m.failStreak || 0, removedAt: m.removedAt || null };
+    }
+    if (Object.keys(health).length) out[name] = health;
+  }
+  return out;
+}
+
 function fairnessState(comboName) {
   let s = comboFairness.get(comboName);
   if (!s) comboFairness.set(comboName, (s = newFairness()));
   return s;
 }
 
-export function markComboMember(comboName, model, failed = false) {
+// A member that fails COMBO_DROP_FAILS routings in a row is removed from the combo (DB).
+// Request-scoped rejections (400 validation/context) don't count: the model is reachable.
+export const COMBO_DROP_FAILS = 5;
+
+/** Record a member result. `dead` = the model could not be called at all (counts toward removal). */
+export function markComboMember(comboName, model, failed = false, dead = failed, dropFails = COMBO_DROP_FAILS) {
   const s = fairnessState(comboName);
   const m = s.members.get(model) || {};
   m.lastSeq = s.seq;
   if (failed) { m.errSeq = s.seq; m.fail = (m.fail || 0) + 1; }
-  else { delete m.errSeq; m.ok = (m.ok || 0) + 1; }
+  else { delete m.errSeq; delete m.removedAt; m.ok = (m.ok || 0) + 1; m.failStreak = 0; }
+  if (dead) m.failStreak = (m.failStreak || 0) + 1;
   s.members.set(model, m);
   persistFairness(comboName, s);
+  return dropFails > 0 && m.failStreak >= dropFails ? dropComboMember(comboName, model, m) : null;
+}
+
+// Never drops the last member (an empty combo would fail every request).
+async function dropComboMember(comboName, model, m) {
+  try {
+    const combo = await getComboByName(comboName);
+    if (!combo?.models?.includes(model) || combo.models.length <= 1) return false; // pool/adapter model or last one
+    await updateCombo(combo.id, { models: combo.models.filter((x) => x !== model) });
+    const streak = m.failStreak;
+    m.removedAt = new Date().toISOString();
+    m.failStreak = 0;
+    persistFairness(comboName, fairnessState(comboName));
+    console.warn(`[COMBO] removed ${model} from "${comboName}" after ${streak} failed routings in a row`);
+    return true;
+  } catch { return false; }
 }
 
 /**
@@ -538,6 +579,7 @@ export async function handleComboChat({
   forceModel = null,
   shuffle = false,
   maxConcurrency = 0,
+  dropFails = COMBO_DROP_FAILS, // 0 = never auto-remove
 }) {
   // Round-robin spreads load, so cap in-flight requests per member; a full member throws
   // SEMAPHORE_BUSY into the catch below and the loop cascades to the next model.
@@ -557,6 +599,8 @@ export async function handleComboChat({
   }
   // Shuffle first so equal-ranked members (and the no-answer fallback) vary per turn.
   const fair = shuffle && (comboStrategy === "smart" || comboStrategy === "fallback");
+  // Drop tracking counts failures for every real combo (ignore missing name or solo model/provider).
+  const health = Boolean(comboName && !comboName.includes("/"));
   if (fair) models = shuffleModels(models);
   let rotatedModels = models;
   let activeStickyModel = null;
@@ -674,8 +718,8 @@ export async function handleComboChat({
   // Fairness: stale members jump ahead, recently-failed ones drop to the end;
   // forced/sticky model stays first so lane overrides and prompt cache hold.
   // Per-turn: Jev's pick becomes the soft head (stays first unless stale exploration).
+  if (health) await hydrateComboFairness(comboName); // failStreak must survive restarts
   if (fair) {
-    await hydrateComboFairness(comboName);
     const head = forceModel && models.includes(forceModel) ? forceModel : activeStickyModel;
     rotatedModels = fairnessOrdered(rotatedModels, comboName, head, jevPick);
   }
@@ -683,7 +727,6 @@ export async function handleComboChat({
   // A model may answer at most HEAD_STREAK_MAX turns in a row; then reshuffle and move the
   // session sticky to the new head so the following turns stick to it instead.
   if (comboStrategy === "smart" && !(forceModel && models.includes(forceModel))) {
-    if (!fair) await hydrateComboFairness(comboName);
     const before = rotatedModels[0];
     rotatedModels = capHeadStreak(rotatedModels, comboName, sessionId);
     if (rotatedModels[0] !== before && before) {
@@ -759,7 +802,7 @@ export async function handleComboChat({
                   }
                   lastError = "Zero usable content";
                   lastStatus = 200;
-                  if (fair) markComboMember(comboName, modelStr, true);
+                  if (health) markComboMember(comboName, modelStr, true, false, dropFails);
                   trace.failed(i, 200, lastError);
                   continue;
                 }
@@ -770,18 +813,18 @@ export async function handleComboChat({
           }
 
           log.info("COMBO", `Model ${modelStr} succeeded`);
-          if (fair) markComboMember(comboName, modelStr);
+          if (health) markComboMember(comboName, modelStr, false, false, dropFails);
           trace.answered(i);
           if (comboStrategy === "smart") recordComboAnswer(comboName, sessionId, modelStr);
-          return result;
+          return continueJsonOnLength(result, { body, models: rotatedModels, from: i, handleSingleModel, log });
         }
 
         if (peeked.outcome === "content") {
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
-          if (fair) markComboMember(comboName, modelStr);
+          if (health) markComboMember(comboName, modelStr, false, false, dropFails);
           trace.answered(i);
           if (comboStrategy === "smart") recordComboAnswer(comboName, sessionId, modelStr);
-          return peeked.response;
+          return continueOnLength(peeked.response, { body, models: rotatedModels, from: i, handleSingleModel, log });
         }
 
         // Empty generation. Fall through to the next candidate unless this is a legitimately
@@ -802,7 +845,7 @@ export async function handleComboChat({
         // Drain/close the discarded stream in the background so its usage logging still runs.
         peeked.response.body?.cancel?.().catch(() => {});
         lastError = `empty generation (${reasonLabel})`;
-        if (fair) markComboMember(comboName, modelStr, true);
+        if (health) markComboMember(comboName, modelStr, true, false, dropFails);
         trace.failed(i, 200, lastError);
         if (!lastStatus) lastStatus = 502;
         continue;
@@ -856,7 +899,7 @@ export async function handleComboChat({
         lastError = errorText || String(result.status);
         if (!lastStatus) lastStatus = result.status;
         if (!requestScopedResult) requestScopedResult = result;
-        if (fair) markComboMember(comboName, modelStr, true);
+        if (health) markComboMember(comboName, modelStr, true, false, dropFails);
         trace.failed(i, result.status, errorText);
         continue;
       }
@@ -873,7 +916,7 @@ export async function handleComboChat({
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
-      if (fair) markComboMember(comboName, modelStr, true);
+      if (health) markComboMember(comboName, modelStr, true, true, dropFails);
       trace.failed(i, result.status, errorText);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
@@ -883,7 +926,7 @@ export async function handleComboChat({
       }
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
-      if (fair) markComboMember(comboName, modelStr, true);
+      if (health) markComboMember(comboName, modelStr, true, error?.code !== "SEMAPHORE_BUSY", dropFails);
       trace.failed(i, 500, lastError);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
@@ -1101,7 +1144,13 @@ function isFreshUserTurn(body) {
   return last?.role === "user" && !(Array.isArray(last.content) && last.content.some((c) => c?.type === "tool_result"));
 }
 
-export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
+// Panel/worker health for fusion/orchestrate: request-shaped 4xx don't count toward auto-drop.
+const isDeadStatus = (code) => code !== 400 && code !== 413 && code !== 422;
+const markPanel = (comboName, model, ok, code, dropFails) => {
+  if (comboName) markComboMember(comboName, model, !ok, !ok && isDeadStatus(code), dropFails);
+};
+
+export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning, dropFails = COMBO_DROP_FAILS }) {
   const panel = Array.isArray(models) ? models.filter(Boolean) : [];
   if (panel.length === 0) {
     return new Response(
@@ -1159,9 +1208,10 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     const res = settled[i];
     const model = runPanel[i];
     if (!res) { log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`); continue; }
-    if (res.__timeout) { log.warn("FUSION", `Panel ${model} timed out`); continue; }
-    if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); continue; }
-    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); if (res.status === 429 || res.status === 503) markPanelCooldown(model); continue; }
+    if (res.__timeout) { log.warn("FUSION", `Panel ${model} timed out`); markPanel(comboName, model, false, 504, dropFails); continue; }
+    if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); markPanel(comboName, model, false, 500, dropFails); continue; }
+    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); if (res.status === 429 || res.status === 503) markPanelCooldown(model); markPanel(comboName, model, false, res.status, dropFails); continue; }
+    markPanel(comboName, model, true, 200, dropFails);
     try {
       const json = await res.clone().json();
       const text = extractPanelText(json);
@@ -1349,7 +1399,7 @@ async function summarizeLargeToolResults(body, handleSingleModel, model, log, se
  *
  * @param {Object} options - same shape as handleFusionChat; plannerModel falls back to models[0]
  */
-export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning, profiles, sessionId = null }) {
+export async function handleOrchestrateChat({ body, models, handleSingleModel, log, comboName, plannerModel, tuning, profiles, sessionId = null, dropFails = COMBO_DROP_FAILS }) {
   const workers = Array.isArray(models) ? models.filter(Boolean) : [];
   const planner = plannerModel && plannerModel.trim() ? plannerModel.trim() : workers[0];
   if (!planner) {
@@ -1403,7 +1453,8 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
   else if (Array.isArray(base.input)) base.input = flattenToolHistory(base.input);
   const askPlanner = async (prompt) => {
     const res = await withTimeout(handleSingleModel(appendUserTurn(base, prompt), planner, true), cfg.plannerTimeoutMs);
-    if (!res?.ok) return "";
+    if (!res?.ok) { markPanel(comboName, planner, false, res?.__timeout ? 504 : res?.status ?? 500, dropFails); return ""; }
+    markPanel(comboName, planner, true, 200, dropFails);
     try { return extractPanelText(await res.clone().json()); } catch { return ""; }
   };
   // Budget: plan + synthesis each read the conversation once, each review round once more.
@@ -1435,8 +1486,10 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
           log.warn("ORCHESTRATE", `Worker ${worker} failed on "${s.title}"`, { status: code });
           if (code === 429 || code === 503) markPanelCooldown(worker);
           trace.failed(i, code, res?.__timeout ? "timeout" : res?.__error?.message);
+          markPanel(comboName, worker, false, code, dropFails);
           return null;
         }
+        markPanel(comboName, worker, true, 200, dropFails);
         const text = extractPanelText(await res.clone().json().catch(() => null));
         if (!text) { trace.failed(i, 200, "empty"); return null; }
         trace.answered(i, true);

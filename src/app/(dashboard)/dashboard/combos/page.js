@@ -71,6 +71,7 @@ function getPolicyBadgeLabel(strategy = {}) {
 
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
+  const [comboHealth, setComboHealth] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -196,7 +197,10 @@ export default function CombosPage() {
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
 
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
-      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
+      if (combosRes.ok) {
+        setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
+        setComboHealth(combosData.health || {});
+      }
       if (providersRes.ok) {
         setActiveProviders((providersData.connections || []).filter((c) => c.isActive !== false));
       }
@@ -367,7 +371,8 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
       // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      const isDefaultDrop = next.dropFails === undefined || next.dropFails === 5;
+      if ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") && isDefaultDrop) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -597,6 +602,7 @@ export default function CombosPage() {
                   onEdit={() => setEditingCombo(combo)}
                   onDelete={() => handleDelete(combo.id)}
                   strategy={comboStrategies[combo.name] || {}}
+                  health={comboHealth[combo.name] || {}}
                   onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
                   selected={selectedIds.includes(combo.id)}
                   onToggleSelect={() => toggleSelect(combo.id)}
@@ -690,11 +696,12 @@ function getRouterModelStatus(routerModel, activeProviders) {
   return { ready: false, label: "Not configured", providerId };
 }
 
-function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
+function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, health = {}, onSetStrategy, selected = false, onToggleSelect }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showRouterSelect, setShowRouterSelect] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
+  const dropFails = Number.isInteger(strategy.dropFails) ? strategy.dropFails : 5;
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
   const isFusion = current === "fusion" || current === "orchestrate";
@@ -730,6 +737,14 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 combo.models.slice(0, 3).map((model, index) => (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-muted-foreground dark:bg-white/5">
                     <span>{model}</span>
+                    {health[model]?.failStreak > 0 && (
+                      <span
+                        className="rounded bg-red-500/15 px-1 text-[10px] font-medium text-red-600 dark:text-red-400"
+                        title={`Jev: unreachable ${health[model].failStreak}${dropFails > 0 ? `/${dropFails}` : ""} routings${dropFails > 0 ? ` — auto-removed at ${dropFails}` : ""}`}
+                      >
+                        {health[model].failStreak}{dropFails > 0 ? `/${dropFails}` : ""}
+                      </span>
+                    )}
                     <CapacityBadges caps={
                       comboByName[model]
                         ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
@@ -742,6 +757,17 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 <span className="text-[10px] text-muted-foreground">+{combo.models.length - 3} more</span>
               )}
             </div>
+            {(() => {
+              const dropped = Object.entries(health).filter(([m, st]) => st?.removedAt && !combo.models.includes(m));
+              return dropped.length > 0 ? (
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-red-600 dark:text-red-400">
+                  <span>Jev removed (unreachable):</span>
+                  {dropped.map(([m]) => (
+                    <code key={m} className="rounded bg-red-500/10 px-1 py-0.5 font-mono">{m}</code>
+                  ))}
+                </div>
+              ) : null;
+            })()}
             {comboCaps && (
               <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
                 <span>ctx {fmtK(comboCaps.contextWindow)}</span>
@@ -850,6 +876,25 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 </div>
               );
             })()}
+            {/* Auto-drop threshold for unreachable models (0 = disabled) */}
+            <label className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="font-medium">Auto-drop after</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                key={`drop-${combo.id}-${dropFails}`}
+                defaultValue={dropFails}
+                onBlur={(e) => {
+                  const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                  if (n !== dropFails) onSetStrategy({ dropFails: n });
+                }}
+                className="w-12 rounded border border-border/70 bg-transparent px-1.5 py-0.5 font-mono text-[11px] text-foreground focus:border-primary focus:outline-none"
+                aria-label="Auto-drop failed model after N routings"
+                title="Remove unreachable models after N consecutive failed routings (0 = off)"
+              />
+              <span>failed routings{dropFails === 0 ? " (off)" : ""}</span>
+            </label>
           </div>
         </div>
 

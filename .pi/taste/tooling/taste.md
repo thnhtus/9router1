@@ -1,4 +1,5 @@
 # Tooling
+- Wants system/resource metrics (e.g. RAM, dev server RSS, machine temperature) visible at a glance in the pi statusline rather than checked manually; asks for monitoring to be added to the pi footer for ongoing tracking. Confidence: 0.4
 - For UI clicks and checks in the running app, use the browseros-neo browser tool and review the actual responses yourself instead of asking the user to click. Confidence: 0.7
 - When the user says to turn off localhost/dev servers (e.g. "tắt toàn bộ localhost đi, để tôi chạy"), stop all local dev processes (next dev etc.) and leave them stopped so the user can run them themselves; don't leave dev servers running. Confidence: 0.5
 - Wants charts/data visualizations built with D3.js (https://d3js.org/). Confidence: 0.5
@@ -6,8 +7,9 @@
 - To analyze external UI reference pages (e.g. affectui.com components) before adapting them into the project, use the `rea` tool (e.g. `rea capture-browser-scenario`). Also uses `rea` to evaluate external GitHub repos (e.g. OmniRoute) and to gap-compare them against 9router1 for features worth porting. Confidence: 0.7
 - Wants DB/schema integration and migration work gated (validated) through the Supabase MCP. Confidence: 0.55
 - Prefers moving app state that fits a DB (file-based logs and state) into the DB, with migrations to import the existing data. Confidence: 0.35
-- For UI polish tasks, apply the impeccable skill together with the /taste design principles. Confidence: 0.7
+- For UI polish tasks, apply the impeccable skill (`/skill:impeccable polish`) together with the /taste design principles to fix layout, spacing, and component stability in tables and dashboards. Confidence: 0.8
 - Runs agent sessions through the billion-context (`bili`) proxy in front of local 9Router (port 20128). When bili/proxy errors come up (e.g. 502 `preflight_compress_failed` context-window errors), wants the agent to fix the config itself (`~/.config/billion-context/billion-context.json`) rather than just explain the error. Confidence: 0.4
 - When a terse bug report says a live feature isn't working (e.g. "Live requests rig chưa chạy được trên ui"), expects the agent to trace the root cause through the data path, prefer a config-only fix over code when it suffices, and confirm the result in the real UI. Confidence: 0.35
+- When a third-party package (e.g. pi extensions in `~/.pi/agent/npm/node_modules`) is causing a problem, prefers a no-code-change workaround (e.g. refreshing a cache file) over patching `node_modules`; revert any such patches. Confidence: 0.5
 - Implementation plans for ClickUp tasks (e.g. G-LMS) should be published as pages in the project's ClickUp Docs section (e.g. G-LMS Phase 2 doc 3ju9x-168296), not only as local files or task comments, and linked from the task description. Confidence: 0.5
 - Reserve Rig/Seat (team agents) for team coordination (launch/restore rigs, queue+send qitems, capture seat state, stop rigs); do not use rig for ordinary code work in repo 9router1 — do that directly, or use pi subagent only when the user explicitly asks to delegate. Confidence: 0.5

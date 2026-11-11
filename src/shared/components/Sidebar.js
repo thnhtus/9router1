@@ -30,9 +30,9 @@ import {
 } from "@/components/ui/sidebar";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
-const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
-// Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
-const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
+const VISIBLE_MEDIA_KINDS = ["embedding", "systemone"]; // only kinds with real traffic; image/video/tts/stt/web hidden
+// Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web (Hidden — no web search/fetch traffic)
+// const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
 // Unlayered `.material-symbols-outlined { font-size:24px }` in globals.css outranks Tailwind utilities, hence `!`.
 const ICON = "material-symbols-outlined text-[18px]! leading-none";
@@ -52,10 +52,10 @@ const navItems = [
   { href: "/dashboard/model-stats", label: "Model Stats", icon: "leaderboard" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
-  { href: "/dashboard/cli-agents", label: "CLI Agents", icon: "smart_toy" },
-  { href: "/dashboard/cloud-agents", label: "Cloud Agents", icon: "cloud" },
-  { href: "/dashboard/skills-runtime", label: "Skills (Runtime)", icon: "extension" },
-  { href: "/dashboard/agent-bridge", label: "Agent Bridge", icon: "hub" },
+  // { href: "/dashboard/cli-agents", label: "CLI Agents", icon: "smart_toy" }, // Hidden
+  // { href: "/dashboard/cloud-agents", label: "Cloud Agents", icon: "cloud" }, // Hidden — stub dispatcher
+  // { href: "/dashboard/skills-runtime", label: "Skills (Runtime)", icon: "extension" }, // Hidden
+  // { href: "/dashboard/agent-bridge", label: "Agent Bridge", icon: "hub" }, // Hidden
 ];
 
 const debugItems = [
@@ -64,7 +64,7 @@ const debugItems = [
 ];
 
 const systemItems = [
-  { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
+  // { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" }, // Hidden — unused
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
   { href: "/dashboard/memory", label: "Agent Memory", icon: "memory" },
 ];
@@ -91,7 +91,9 @@ export default function Sidebar() {
   }, []);
 
   // Lazy check for new npm version in background after initial render
+  // Hidden: update-available banner disabled (fork tracks its own master). Remove `return;` to re-enable.
   useEffect(() => {
+    return;
     const timer = setTimeout(() => {
       fetch("/api/version")
         .then(res => res.json())
@@ -164,7 +166,7 @@ export default function Sidebar() {
   const mediaActive = pathname.startsWith("/dashboard/media-providers");
   const mediaItems = [
     ...MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((k) => ({ ...k, href: `/dashboard/media-providers/${k.id}` })),
-    COMBINED_WEB_ITEM,
+    // COMBINED_WEB_ITEM, // Hidden — no web search/fetch traffic
   ];
 
   return (

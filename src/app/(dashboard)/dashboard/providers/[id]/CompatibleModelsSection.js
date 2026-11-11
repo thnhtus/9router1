@@ -75,12 +75,13 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [testingModelId, setTestingModelId] = useState(null);
+  const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [testingAll, setTestingAll] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
 
   const handleTestModel = async (modelId) => {
-    if (testingModelId) return;
-    setTestingModelId(modelId);
+    if (testingModelIds.has(modelId)) return;
+    setTestingModelIds((prev) => new Set(prev).add(modelId));
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -92,7 +93,23 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
     } finally {
-      setTestingModelId(null);
+      setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
+    }
+  };
+
+  // ponytail: 4 parallel pings client-side, same endpoint as single-model test
+  const handleTestAll = async () => {
+    const ids = allModels.map((m) => m.id);
+    if (testingAll || ids.length === 0) return;
+    setTestingAll(true);
+    setModelTestResults({});
+    const queue = [...ids];
+    const worker = async () => { while (queue.length) await handleTestModel(queue.shift()); };
+    try {
+      await handleTestModel(queue.shift());
+      await Promise.all(Array.from({ length: 4 }, worker));
+    } finally {
+      setTestingAll(false);
     }
   };
 
@@ -185,6 +202,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "Importing..." : "Import from /models"}
         </Button>
+        <Button size="sm" variant="secondary" icon={testingAll ? "progress_activity" : "play_arrow"} onClick={handleTestAll} disabled={!canImport || testingAll || allModels.length === 0}>
+          {testingAll ? "Testing..." : "Test All"}
+        </Button>
       </div>
 
       {!canImport && (
@@ -205,7 +225,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
               testStatus={modelTestResults[id]}
-              isTesting={testingModelId === id}
+              isTesting={testingModelIds.has(id)}
             />
           ))}
         </div>

@@ -189,6 +189,7 @@ async function handleChatInner(request, clientRawRequest = null) {
         tuning: comboStrategy === "fusion" ? comboStrategies[modelStr]?.fusionTuning : comboStrategies[modelStr]?.orchestrateTuning,
         profiles: comboStrategy === "orchestrate" ? await getRoutingProfiles(comboModels) : undefined,
         sessionId,
+        dropFails: Number.isInteger(comboStrategies[modelStr]?.dropFails) ? comboStrategies[modelStr].dropFails : undefined,
       });
     }
 
@@ -211,6 +212,7 @@ async function handleChatInner(request, clientRawRequest = null) {
       fallbackPool,
       smartPolicy: comboCfg.smartPolicy || "smart",
       maxConcurrency: Number(comboCfg.maxConcurrency) || 0,
+      dropFails: Number.isInteger(comboCfg.dropFails) ? comboCfg.dropFails : undefined,
       sessionSticky: comboCfg.sessionSticky !== false,
       shuffle: comboCfg.shuffle === true,
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.7,
