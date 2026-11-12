@@ -359,9 +359,12 @@ function dropComboMember(comboName, model, m) {
   return run;
 }
 
-// Never drops the last member (an empty combo would fail every request).
+// Never drops the last member (an empty combo would fail every request), and never
+// drops a member that is itself a combo/alias (no provider prefix) — e.g. "auto" routes
+// to council/brain/worker, whose failures belong to their own members, not to "auto".
 async function doDrop(comboName, model, m) {
   try {
+    if (!model.includes("/") && await getComboByName(model)) return false; // nested combo
     const combo = await getComboByName(comboName);
     if (!combo?.models?.includes(model) || combo.models.length <= 1) return false; // pool/adapter model or last one
     await updateCombo(combo.id, { models: combo.models.filter((x) => x !== model) });

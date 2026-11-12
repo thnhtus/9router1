@@ -354,6 +354,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       flags: xf,
       rtkHits: rtkStats?.hits?.length || 0,
       headroom: headroomSummary,
+      jev: {
+        level: smartSignal?.level ?? null,
+        source: smartSignal?.source || "none",
+        lossySaverAllowed: lossySaverAllowed ? "allowed" : "blocked",
+        lossySaverApplied: Boolean(headroomStats) || xf.some((f) => f.startsWith("CAVEMAN:")),
+      },
     };
   }
 

@@ -121,3 +121,12 @@ it("drops after 5 dead routings, resets on success, ignores request-scoped, keep
   await clearComboMemberHealth("c", ["a"]);
   expect((await getComboHealthMap()).c?.a).toBeUndefined();
 });
+
+test("never drops a member that is itself a combo", async () => {
+  const repo = await import("@/lib/db/repos/combosRepo.js");
+  const { markComboMember } = await import("../../open-sse/services/combo.js");
+  await repo.createCombo({ name: "leaf", models: ["x/1"] });
+  await repo.createCombo({ name: "parent", models: ["leaf", "y/2"] });
+  for (let i = 0; i < 6; i++) await markComboMember("parent", "leaf", true, true);
+  expect((await repo.getComboByName("parent")).models).toContain("leaf");
+});
