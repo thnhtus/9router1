@@ -30,6 +30,16 @@ function JevHealth({ data }) {
         ? <> · <Badge variant="error">paused until {new Date(b.openUntil).toLocaleTimeString()}</Badge></>
         : b.failStreak > 0 && <> · {b.failStreak} failure(s) in a row</>}
       {b.skipped > 0 && <> · {b.skipped} request(s) skipped Jev while paused</>}
+      {data.drops?.length > 0 && (
+        <span className="mt-1 block text-xs">
+          Auto-removed (unreachable):{" "}
+          {data.drops.map((d, i) => (
+            <span key={i} className="mr-2 font-mono text-red-500" title={`${d.failStreak} failed routings in a row`}>
+              {d.reason} <span className="tabular-nums text-text-muted">{new Date(d.at).toLocaleString()}</span>
+            </span>
+          ))}
+        </span>
+      )}
     </p>
   );
 }

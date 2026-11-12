@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listJevLogs, getJevLog, clearJevLogs, jevFlows, jevStats, countJevLogs } from "@/lib/jevLogs.js";
+import { listJevLogs, getJevLog, clearJevLogs, jevFlows, jevStats, countJevLogs, listJevDrops } from "@/lib/jevLogs.js";
 import { getJevBreakerState } from "@/sse/services/systemoneRouter.js";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function GET(request) {
     }
     if (q.get("stats")) {
       const hours = Math.min(Math.max(Number(q.get("hours")) || 1, 1), 24 * 30);
-      return NextResponse.json({ stats: await jevStats(hours), breaker: getJevBreakerState() });
+      return NextResponse.json({ stats: await jevStats(hours), breaker: getJevBreakerState(), drops: await listJevDrops() });
     }
     if (q.get("flows")) return NextResponse.json({ flows: await jevFlows() });
     const limit = Math.min(Math.max(Number(q.get("limit")) || 100, 1), 500);

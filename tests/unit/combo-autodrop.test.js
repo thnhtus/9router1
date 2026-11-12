@@ -82,4 +82,42 @@ it("drops after 5 dead routings, resets on success, ignores request-scoped, keep
   }
   await new Promise((r) => setTimeout(r, 20));
   expect((await repo.getComboByName("orch")).models).toEqual(["p", "w1"]);
+
+  // 429 rate-limits don't count toward auto-drop
+  await repo.createCombo({ name: "rl", models: ["r1", "r2"] });
+  for (let i = 0; i < 3; i++) {
+    await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Explain rate limits" }] },
+      models: ["r1", "r2"],
+      comboName: "rl",
+      dropFails: 2,
+      log: noopLog,
+      handleSingleModel: async (_b, m) => m === "r1"
+        ? jsonRes(429, { error: { message: "rate limit" } })
+        : jsonRes(200, { choices: [{ message: { role: "assistant", content: "ok" } }] }),
+    });
+  }
+  expect((await repo.getComboByName("rl")).models).toEqual(["r1", "r2"]);
+  expect((await getComboHealthMap()).rl?.r1?.failStreak ?? 0).toBe(0);
+
+  // Concurrent drops on the same combo don't clobber each other; drops log to jevBreakerEvents without tripping breaker
+  await repo.createCombo({ name: "race", models: ["m1", "m2", "m3"] });
+  markComboMember("race", "m1", true, true, 2);
+  markComboMember("race", "m2", true, true, 2);
+  await Promise.all([
+    markComboMember("race", "m1", true, true, 2),
+    markComboMember("race", "m2", true, true, 2),
+  ]);
+  expect((await repo.getComboByName("race")).models).toEqual(["m3"]);
+  await new Promise((r) => setTimeout(r, 20));
+  const { listJevDrops, loadOpenBreaker } = await import("@/lib/jevLogs.js");
+  const drops = await listJevDrops();
+  expect(drops.some((d) => d.reason === "race: m1")).toBe(true);
+  expect(drops.some((d) => d.reason === "race: m2")).toBe(true);
+  expect(await loadOpenBreaker()).toBe(0);
+
+  // Restore clears failStreak & removedAt
+  const { clearComboMemberHealth } = await import("../../open-sse/services/combo.js");
+  await clearComboMemberHealth("c", ["a"]);
+  expect((await getComboHealthMap()).c?.a).toBeUndefined();
 });

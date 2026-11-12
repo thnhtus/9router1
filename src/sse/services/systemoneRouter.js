@@ -146,7 +146,7 @@ async function evaluate({
   // ponytail: greeting/arithmetic-only fast path skips the ~340ms (p50) Jev call; widen TRIVIAL_RE if logs show more cheap repeats.
   if (models.includes("worker") && isTrivialPrompt(baseState)) {
     trace.fastPath = true;
-    return { choice: "worker", confidence: 0.95, probabilities: { worker: 0.95 }, rationale: "fast-path: trivial prompt" };
+    return { choice: "worker", confidence: 0.95, probabilities: { worker: 0.95 }, level: 1, levelConfidence: 0.95, rationale: "fast-path: trivial prompt" };
   }
 
   const hints = [];
@@ -185,6 +185,12 @@ async function evaluate({
           type: "choice",
           instructions: "Pick the best fitting model whose role and scores match the task complexity. Balance cost with model variety: do not default to the single cheapest option when multiple models fit. Compare models from every provider on equal terms (Claude, GPT, Gemini, GLM, DeepSeek, Mistral, Grok, free/open models); do not favor one provider family by default. A model with missing profile fields is not disqualified; judge it on the info given and its fit for the level. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. Avoid models marked unreliable or failed recently.",
           criteria,
+        },
+        // Same call, no extra round trip: the level gates lossy token savers (chatCore).
+        level: {
+          type: "choice",
+          instructions: "Task level: L1 trivial lookup/formatting/chit-chat, L2 simple answer or single-file edit, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. Raise one step if exact precision is needed (code that must compile, money, legal text, data writes, strict output schema).",
+          criteria: { L1: null, L2: null, L3: null, L4: null },
         },
       },
     };

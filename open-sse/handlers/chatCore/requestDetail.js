@@ -92,6 +92,7 @@ export function buildRequestDetail(base, overrides = {}) {
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
+    tokenSavers: base.tokenSavers || undefined,
     status: base.status || "success",
     ...overrides
   };

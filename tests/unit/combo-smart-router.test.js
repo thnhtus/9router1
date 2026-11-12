@@ -109,7 +109,22 @@ describe("System One Smart Combo Router", () => {
           "ds/deepseek-v4": 0.85,
           "cx/gpt-5-mini": 0.15,
         },
+        level: null,
+        levelConfidence: null,
+        levelLowProbability: null,
       });
+    });
+
+    it("parses the task level from a second choice answer", () => {
+      const result = parseSystemOneRouteAnswer({
+        answers: {
+          route: { choice: "ds/deepseek-v4", confidence: 0.85 },
+          level: { choice: "L2", confidence: 0.37, probabilities: { L1: 0.47, L2: 0.53, L3: 0, L4: 0 } },
+        },
+      });
+      expect(result.level).toBe(2);
+      expect(result.levelConfidence).toBe(0.37);
+      expect(result.levelLowProbability).toBe(1);
     });
 
     it("returns null on malformed or missing route answers", () => {

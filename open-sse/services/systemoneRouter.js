@@ -6,6 +6,9 @@
 
 export const DEFAULT_SYSTEMONE_ROUTER_MODEL = "oc/jev-1.13-free";
 export const DEFAULT_SYSTEMONE_TIMEOUT_MS = 8000;
+// Per-request smart-routing signal (task level/confidence) carried on the request body.
+// A Symbol keeps it out of JSON payloads sent upstream and out of request logs.
+export const SMART_SIGNAL = Symbol("9router.smartSignal");
 // How long a request waits for Jev before routing by sticky/default order; a late answer
 // still lands in the session sticky for the next turn.
 export const SMART_WAIT_MS = 400;
@@ -134,8 +137,9 @@ export function buildChoiceCriteria(models) {
  * Parse a System One route response JSON.
  *
  * @param {object} json - Upstream response payload
- * @returns {{ choice: string, confidence: number|null, probabilities: Record<string, number>|null } | null}
+ * @returns {{ choice: string, confidence: number|null, probabilities: Record<string, number>|null, level: number|null, levelConfidence: number|null, levelLowProbability: number|null } | null}
  */
+
 export function parseSystemOneRouteAnswer(json) {
   if (!json || typeof json !== "object") return null;
 
@@ -144,6 +148,20 @@ export function parseSystemOneRouteAnswer(json) {
 
   const rawChoice = typeof route.choice === "string" ? route.choice.trim() : "";
   if (!rawChoice) return null;
+
+  const levelAnswer = json.answers?.level;
+  const rawLevel = typeof levelAnswer?.choice === "string" ? levelAnswer.choice.trim().toUpperCase() : "";
+  const level = /^L?([1-4])$/.exec(rawLevel)?.[1];
+  const levelConfidence = typeof levelAnswer?.confidence === "number" && Number.isFinite(levelAnswer.confidence)
+    ? levelAnswer.confidence
+    : null;
+  const levelProbs = levelAnswer?.probabilities;
+  let levelLowProbability = null;
+  if (levelProbs && typeof levelProbs === "object") {
+    const p1 = Number(levelProbs.L1 ?? levelProbs.l1 ?? 0);
+    const p2 = Number(levelProbs.L2 ?? levelProbs.l2 ?? 0);
+    if (Number.isFinite(p1) && Number.isFinite(p2)) levelLowProbability = p1 + p2;
+  }
 
   const confidence = typeof route.confidence === "number" && Number.isFinite(route.confidence)
     ? route.confidence
@@ -164,6 +182,9 @@ export function parseSystemOneRouteAnswer(json) {
     choice: rawChoice,
     confidence,
     probabilities,
+    level: level ? Number(level) : null,
+    levelConfidence,
+    levelLowProbability,
   };
 }
 

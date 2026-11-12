@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import "../translator/registerAll.js";
+import { SMART_SIGNAL } from "../../open-sse/services/systemoneRouter.js";
 
 const { executeMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
@@ -419,5 +420,87 @@ describe("handleChatCore Headroom diagnostics", () => {
         messages: [{ role: "user", content: "Write polished prose." }],
       }),
     }));
+  });
+
+  it.each([
+    [3, 0.9, null, false],
+    [4, 0.95, null, false],
+    [3, 0.9, 0.95, false],
+    [2, 0.5, 0.6, false],
+    [2, 0.37, 1.0, true],
+    [1, 0.95, null, true],
+  ])("Jev task L%s (confidence %s, L1+L2 %s) runs Headroom: %s", async (level, levelConfidence, levelLowProbability, runs) => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const body = { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] };
+    body[SMART_SIGNAL] = { level, levelConfidence, levelLowProbability };
+
+    await handleChatCore({
+      body,
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      headroomEnabled: true,
+      headroomUrl: "http://localhost:8787",
+      headroomCompressUserMessages: false,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      clientRawRequest: {
+        endpoint: "/v1/chat/completions",
+        body: {},
+        headers: { accept: "application/json" },
+      },
+    });
+
+    if (runs) {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/compress"),
+        expect.any(Object)
+      );
+    } else {
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith("TOKEN_SAVER", expect.stringContaining(`L${level}`));
+    }
+  });
+
+  it.each([
+    [1, true],
+    [2, true],
+    [3, false],
+    [4, false],
+  ])("heuristic fallback L%s runs Headroom: %s", async (level, runs) => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const body = { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] };
+    body[SMART_SIGNAL] = { level, levelConfidence: 0.8, source: "heuristic" };
+
+    await handleChatCore({
+      body,
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      headroomEnabled: true,
+      headroomUrl: "http://localhost:8787",
+      headroomCompressUserMessages: false,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      clientRawRequest: {
+        endpoint: "/v1/chat/completions",
+        body: {},
+        headers: { accept: "application/json" },
+      },
+    });
+
+    if (runs) {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/compress"),
+        expect.any(Object)
+      );
+    } else {
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith("TOKEN_SAVER", expect.stringContaining("heuristic"));
+    }
   });
 });

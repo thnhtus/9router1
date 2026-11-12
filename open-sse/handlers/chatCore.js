@@ -34,6 +34,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { SMART_SIGNAL } from "../services/systemoneRouter.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -131,6 +132,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
+  // Jev already classified this turn for smart combos (or heuristic fallback while Jev is slow).
+  // Lossy savers (Headroom/Caveman) only run on simple tasks (L1/L2) with a confident classification; L3/L4 keep full fidelity.
+  const smartSignal = body?.[SMART_SIGNAL] || null;
+  let lossySaverAllowed = true;
+  if (smartSignal?.level != null) {
+    const confident = smartSignal.levelLowProbability != null
+      ? smartSignal.levelLowProbability >= 0.8
+      : (smartSignal.levelConfidence ?? 0) >= 0.7;
+    lossySaverAllowed = smartSignal.level <= 2 && confident;
+  }
+  if ((headroomEnabled || cavemanEnabled) && smartSignal?.level != null && !lossySaverAllowed) {
+    log?.info?.("TOKEN_SAVER", `lossy savers off: Jev task L${smartSignal.level} (${smartSignal.source || "jev"}, confidence ${smartSignal.levelConfidence ?? "N/A"}, L1+L2 ${smartSignal.levelLowProbability ?? "N/A"})`);
+  }
 
   // Cursor's translator rewrites tool_result into user text, so RTK must run on
   // the source body before translation. Every other pair translates the tool
@@ -284,7 +299,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
+  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled && lossySaverAllowed, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
   if (headroomLine) {
@@ -292,7 +307,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       log?.warn?.("HEADROOM", `reported token delta, but messages and outbound JSON shrank <5% | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
     }
-  } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
+  } else if (tokenSaverEnabled && headroomEnabled && lossySaverAllowed) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
   // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
@@ -300,7 +315,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (rtkStats?.hits?.length) xf.push(`RTK:${rtkStats.hits.length}`);
 
   // Caveman: inject terse-style system prompt
-  if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
+  if (tokenSaverEnabled && cavemanEnabled && cavemanLevel && lossySaverAllowed) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
   }
@@ -330,6 +345,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
+  let tokenSavers = null;
+  if (xf.length || headroomStats) {
+    const headroomSummary = headroomStats
+      ? { before: headroomStats.tokens_before || 0, after: headroomStats.tokens_after || 0, saved: headroomStats.tokens_saved || 0 }
+      : null;
+    tokenSavers = {
+      flags: xf,
+      rtkHits: rtkStats?.hits?.length || 0,
+      headroom: headroomSummary,
+    };
+  }
 
   // Pin cache breakpoints to the final body — every saver above can reshape
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
@@ -427,6 +453,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       providerRequest: translatedBody || null,
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
       pxpipe: pxpipeSummary,
+      tokenSavers,
       status: "error"
     })).catch(() => { });
 
@@ -502,6 +529,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       providerRequest: finalBody || translatedBody || null,
       response: { error: message, status: statusCode, thinking: null },
       pxpipe: pxpipeSummary,
+      tokenSavers,
       status: "error"
     })).catch(() => { });
 
@@ -514,7 +542,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers));
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, tokenSavers, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

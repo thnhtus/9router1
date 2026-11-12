@@ -382,6 +382,17 @@ export async function POST(request) {
           break;
         }
 
+        case "inception": {
+          const res = await fetch("https://api.inceptionlabs.ai/v1/chat/completions", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "mercury-2", messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+
         case "deepseek":
         case "groq":
         case "xai":
@@ -402,16 +413,6 @@ export async function POST(request) {
         case "runcrate":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
-        case "inception": {
-          const res = await fetch("https://api.inceptionlabs.ai/v1/chat/completions", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "mercury-2", messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
-            signal: AbortSignal.timeout(8000),
-          });
-          isValid = res.status !== 401 && res.status !== 403;
-          break;
-        }
         case "nvidia": {
           const endpoints = {
             ...Object.fromEntries(

@@ -16,11 +16,13 @@ import {
   clearStickyComboSession,
   orderModelsByChoice,
   SMART_WAIT_MS,
+  SMART_SIGNAL,
   extractPromptState,
 } from "./systemoneRouter.js";
 import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
 import { getComboByName, updateCombo } from "../../src/lib/db/repos/combosRepo.js";
 import { acquire, releaseOnBodyEnd } from "./modelSemaphore.js";
+import { recordBreakerEvent } from "../../src/lib/jevLogs.js";
 
 const fairnessKv = makeKv("comboFairness");
 
@@ -345,8 +347,20 @@ export function markComboMember(comboName, model, failed = false, dead = failed,
   return dropFails > 0 && m.failStreak >= dropFails ? dropComboMember(comboName, model, m) : null;
 }
 
+// Serialize drops per combo: read-modify-write of combo.models must not interleave
+// (two concurrent drops would otherwise overwrite each other). ponytail: in-process only;
+// multi-instance shared DB needs a DB-level conditional update.
+const dropLocks = new Map();
+function dropComboMember(comboName, model, m) {
+  const run = (dropLocks.get(comboName) || Promise.resolve()).then(() => doDrop(comboName, model, m));
+  const tail = run.catch(() => {});
+  dropLocks.set(comboName, tail);
+  tail.then(() => { if (dropLocks.get(comboName) === tail) dropLocks.delete(comboName); });
+  return run;
+}
+
 // Never drops the last member (an empty combo would fail every request).
-async function dropComboMember(comboName, model, m) {
+async function doDrop(comboName, model, m) {
   try {
     const combo = await getComboByName(comboName);
     if (!combo?.models?.includes(model) || combo.models.length <= 1) return false; // pool/adapter model or last one
@@ -356,8 +370,23 @@ async function dropComboMember(comboName, model, m) {
     m.failStreak = 0;
     persistFairness(comboName, fairnessState(comboName));
     console.warn(`[COMBO] removed ${model} from "${comboName}" after ${streak} failed routings in a row`);
+    recordBreakerEvent({ kind: "drop", failStreak: streak, reason: `${comboName}: ${model}` }).catch(() => {});
     return true;
   } catch { return false; }
+}
+
+/** Clear fail streak / removed mark for members put back into a combo (restore or edit). */
+export async function clearComboMemberHealth(comboName, models = []) {
+  if (!comboName || !models.length) return;
+  await hydrateComboFairness(comboName);
+  const s = comboFairness.get(comboName);
+  if (!s) return;
+  let changed = false;
+  for (const model of models) {
+    const m = s.members.get(model);
+    if (m && (m.failStreak || m.removedAt)) { m.failStreak = 0; delete m.removedAt; changed = true; }
+  }
+  if (changed) persistFairness(comboName, s);
 }
 
 /**
@@ -652,9 +681,14 @@ export async function handleComboChat({
     } else if (typeof resolveSmartChoice === "function") {
       try {
         const candidates = oneTurnSet.size ? [...models, ...oneTurnSet] : models;
+        // Seed with heuristic level so Headroom/Caveman don't wait on a slow Jev. Jev refines
+        // to a precise level when it arrives in time; a late answer still lands for next turn.
+        body[SMART_SIGNAL] = { level: getTaskLevel(body), levelConfidence: 0.8, source: "heuristic" };
         const smartResult = await raceSmartChoice(resolveSmartChoice(body, candidates), onLate, smartWaitMs);
         const choice = smartResult?.choice;
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
+        // Jev's task level rides on the body (Symbol key: never serialized upstream) so chatCore can gate lossy savers.
+        if (smartResult?.level) body[SMART_SIGNAL] = { level: smartResult.level, levelConfidence: smartResult.levelConfidence ?? null, levelLowProbability: smartResult.levelLowProbability ?? null };
         let escalated = false;
         if (oneTurnSet.has(choice) && (conf === null || conf >= oneTurnThreshold)) {
           const allowed = typeof oneTurn?.consume === "function" ? await Promise.resolve(oneTurn.consume(choice)).catch(() => true) : true;
@@ -916,7 +950,7 @@ export async function handleComboChat({
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
-      if (health) markComboMember(comboName, modelStr, true, true, dropFails);
+      if (health) markComboMember(comboName, modelStr, true, isDeadStatus(result.status), dropFails);
       trace.failed(i, result.status, errorText);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
@@ -1145,7 +1179,8 @@ function isFreshUserTurn(body) {
 }
 
 // Panel/worker health for fusion/orchestrate: request-shaped 4xx don't count toward auto-drop.
-const isDeadStatus = (code) => code !== 400 && code !== 413 && code !== 422;
+// Rate limits (429) are handled by per-model cooldowns, so don't count them toward auto-drop.
+const isDeadStatus = (code) => code !== 400 && code !== 413 && code !== 422 && code !== 429;
 const markPanel = (comboName, model, ok, code, dropFails) => {
   if (comboName) markComboMember(comboName, model, !ok, !ok && isDeadStatus(code), dropFails);
 };

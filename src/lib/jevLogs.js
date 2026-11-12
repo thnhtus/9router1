@@ -58,7 +58,7 @@ export async function recordBreakerEvent({ kind, failStreak = 0, reason = null, 
 /** Epoch ms the breaker stays open until, if the latest event is a still-valid 'open' (survives restarts). */
 export async function loadOpenBreaker() {
   const a = await getAdapter();
-  const row = a.get(`SELECT kind, until FROM jevBreakerEvents ORDER BY id DESC LIMIT 1`);
+  const row = a.get(`SELECT kind, until FROM jevBreakerEvents WHERE kind IN ('open', 'close') ORDER BY id DESC LIMIT 1`);
   const until = row?.kind === "open" && row.until ? Date.parse(row.until) : 0;
   return until > Date.now() ? until : 0;
 }
@@ -93,6 +93,12 @@ export async function getJevLog(id) {
   const a = await getAdapter();
   const row = a.get(`SELECT * FROM jevLogs WHERE id = ?`, [id]);
   return row ? { ...row, request: parseJson(row.request, null), response: parseJson(row.response, null) } : null;
+}
+
+/** Members Jev auto-removed from combos (newest first). reason = "combo: model". */
+export async function listJevDrops(limit = 20) {
+  const a = await getAdapter();
+  return a.all(`SELECT at, failStreak, reason FROM jevBreakerEvents WHERE kind = 'drop' ORDER BY id DESC LIMIT ?`, [limit]);
 }
 
 /** Clears the per-request log only; hourly counters and breaker history are kept. */
