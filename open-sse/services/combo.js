@@ -684,9 +684,10 @@ export async function handleComboChat({
     } else if (typeof resolveSmartChoice === "function") {
       try {
         const candidates = oneTurnSet.size ? [...models, ...oneTurnSet] : models;
-        // Seed with heuristic level so Headroom/Caveman don't wait on a slow Jev. Jev refines
-        // to a precise level when it arrives in time; a late answer still lands for next turn.
-        body[SMART_SIGNAL] = { level: getTaskLevel(body), levelConfidence: 0.8, source: "heuristic" };
+        // Seed with heuristic level so RTK stats still have a level while Jev runs.
+        // Confidence sits below the 0.7 lossy gate (chatCore) so Headroom/Caveman stay off
+        // for a Jev-late turn; only Jev's own confident answer may enable lossy savers.
+        body[SMART_SIGNAL] = { level: getTaskLevel(body), levelConfidence: 0.5, source: "heuristic" };
         const smartResult = await raceSmartChoice(resolveSmartChoice(body, candidates), onLate, smartWaitMs);
         const choice = smartResult?.choice;
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
@@ -789,6 +790,7 @@ export async function handleComboChat({
   if (extra.length) rotatedModels = [...rotatedModels, ...extra];
 
   let lastError = null;
+  let refusedProvider = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
   let requestScopedResult = null;
@@ -796,6 +798,11 @@ export async function handleComboChat({
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    // Same provider refused this prompt; its other members would refuse it too.
+    if (refusedProvider && parseModel(modelStr).provider === refusedProvider) {
+      trace.failed(i, 200, `skipped: ${refusedProvider} refused`);
+      continue;
+    }
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
     trace.trying(i);
 
@@ -869,11 +876,15 @@ export async function handleComboChat({
         // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
         const reasonLabel = peeked.finishReason || "no-content";
         const isLast = i === rotatedModels.length - 1;
-        if (isNoRetryFinish(peeked.finishReason) || isLast) {
-          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
+        const noRetry = isNoRetryFinish(peeked.finishReason);
+        const modelProvider = parseModel(modelStr).provider;
+        const otherProviderLeft = rotatedModels.slice(i + 1).some((m) => parseModel(m).provider !== modelProvider);
+        if (isLast || (noRetry && !otherProviderLeft)) {
+          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${noRetry ? "no-retry class, no other provider left" : "last candidate"}, returning as-is`);
           trace.finish(i, 200, `empty (${reasonLabel})`);
           return peeked.response;
         }
+        if (noRetry) refusedProvider = modelProvider;
 
         log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — falling through to next candidate`);
         if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {

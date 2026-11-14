@@ -38,6 +38,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > agnes → headers (a
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > aihubmix → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > alicode → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2135,6 +2154,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > xkiro → headers (a
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > z-ai → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2168,6 +2206,13 @@ exports[`GOLDEN buildUrl (default executor providers) > agnes → url (stream + 
 {
   "nonStream": "https://apihub.agnes-ai.com/v1/chat/completions",
   "stream": "https://apihub.agnes-ai.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > aihubmix → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://aihubmix.com/v1/chat/completions",
+  "stream": "https://aihubmix.com/v1/chat/completions",
 }
 `;
 
@@ -2861,6 +2906,13 @@ exports[`GOLDEN buildUrl (default executor providers) > xkiro → url (stream + 
 {
   "nonStream": "https://api.xkiro.com/v1/chat/completions",
   "stream": "https://api.xkiro.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > z-ai → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.z.ai/api/paas/v4/chat/completions",
+  "stream": "https://api.z.ai/api/paas/v4/chat/completions",
 }
 `;
 

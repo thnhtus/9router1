@@ -144,6 +144,12 @@ export function isNoRetryFinish(finishReason) {
   return NO_RETRY_EMPTY_FINISH.has(String(finishReason).toLowerCase());
 }
 
+// A turn that produced text and then a no-retry finish (content_filter) is a blocked turn,
+// not an answer: report it as empty so the combo can move to another provider.
+function contentOutcome(state) {
+  return state.sawContent && !isNoRetryFinish(state.finishReason) ? "content" : "empty";
+}
+
 // Peek a streaming Response body: read frames until the first content frame (→ "content"),
 // the stream ends (→ "empty"), or the deadline elapses (→ "content", fail-open: never hold a
 // possibly-valid slow stream). Returns the decision, the buffered head bytes, the live reader,
@@ -184,12 +190,15 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
     pendingRead = null;
     if (done) {
       if (textBuf) scanSSEBuffer(textBuf + "\n", state); // final line without a trailing newline
-      return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
+      return settle({ outcome: contentOutcome(state), timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }
     headChunks.push(value);
     textBuf += decoder.decode(value, { stream: true });
     scanSSEBuffer(textBuf, state);
     textBuf = state.pending; // only the not-yet-complete line carries over
+    if (state.sawContent && state.finishReason) {
+      return settle({ outcome: contentOutcome(state), timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
+    }
     if (state.sawContent) {
       return settle({ outcome: "content", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }

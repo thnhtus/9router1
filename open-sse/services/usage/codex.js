@@ -138,7 +138,7 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
       quotas,
     };
   } catch (error) {
-    throw new Error(`Failed to fetch Codex usage: ${error.message}`);
+    return { message: `Codex connected. Unable to fetch usage: ${error.message}` };
   }
 }
 

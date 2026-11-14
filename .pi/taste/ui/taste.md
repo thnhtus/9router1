@@ -5,3 +5,4 @@
 - Prefers charts centered horizontally within their containing card (e.g. Activity card chart centered). Confidence: 0.5
 - For adjacent cards in a dashboard grid row, prefer equal height via grid stretch with internal scrolling for long lists, over fixed pixel heights (e.g. Recent Requests matched to Provider topology height by dropping height: 480 and using absolute inset-0 scroll). Confidence: 0.5
 - When polishing table/UI text styling, preserve English text content unchanged to avoid breaking i18n/RTL logic; fix layout and CSS only (e.g. add `break-all`, `whitespace-nowrap`, `tabular-nums` but don't rephrase or retranslate). Confidence: 0.7
+- For dialogs/modals that show code or wide content, prefers widening the modal (e.g. `sm:max-w-[110rem]`) so content fits fully rather than scrolling; and groups the action buttons together on one side (right), styling the secondary action (e.g. Done) as `variant="outline"` so it doesn't compete with primary. Confidence: 0.6

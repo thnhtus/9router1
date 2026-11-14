@@ -9,7 +9,6 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import HeaderLanguage from "@/shared/components/HeaderLanguage";
 import ThemeToggle from "@/shared/components/ThemeToggle";
-import DonateModal from "@/shared/components/DonateModal";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
@@ -184,7 +183,6 @@ export default function Header({ showMenuButton = true }) {
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
-  const [donateOpen, setDonateOpen] = useState(false);
 
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
@@ -311,19 +309,10 @@ export default function Header({ showMenuButton = true }) {
           </div>
         )}
         <HeaderSearch />
-        <button
-          onClick={() => setDonateOpen(true)}
-          className="group/donate mr-1 hidden h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-black/[0.04] hover:text-foreground sm:flex dark:hover:bg-white/[0.05]"
-          aria-label="Donate"
-        >
-          <span className="material-symbols-outlined text-[18px]! leading-none text-pink-500 dark:text-pink-400">volunteer_activism</span>
-          <span className="hidden sm:inline">Donate</span>
-        </button>
         <ThemeToggle />
         <HeaderLanguage />
         <HeaderMenu onLogout={handleLogout} />
       </div>
-      <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
     </header>
   );
 }

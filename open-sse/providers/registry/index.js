@@ -168,6 +168,8 @@ import p171 from "./stepfun.js";
 import p172 from "./baichuan.js";
 import p173 from "./sparkdesk.js";
 import p174 from "./bytez.js";
+import p175 from "./aihubmix.js";
+import p176 from "./z-ai.js";
 export default [
   p0,
   p1,
@@ -336,4 +338,6 @@ export default [
   p172,
   p173,
   p174,
+  p175,
+  p176,
 ];

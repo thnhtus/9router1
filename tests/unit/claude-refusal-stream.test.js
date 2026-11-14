@@ -41,6 +41,12 @@ const refusalStream = [
 ];
 
 describe("claude-to-openai: refusal stop_reason", () => {
+  it("explanation rides the same frame as content_filter finish", () => {
+    const { out } = runStream(refusalStream);
+    const finishFrame = out.find(c => c.choices?.[0]?.finish_reason === "content_filter");
+    expect(finishFrame.choices[0].delta.content).toBe(EXPLANATION);
+  });
+
   it("finishes with content_filter, not stop", () => {
     const { out } = runStream(refusalStream);
     const finishes = out.map(c => c.choices?.[0]?.finish_reason).filter(Boolean);

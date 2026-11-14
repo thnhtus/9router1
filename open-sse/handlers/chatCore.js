@@ -14,6 +14,7 @@ import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { bumpTokenSaverHourly } from "@/lib/db/repos/tokenSaverRepo.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
@@ -361,6 +362,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         lossySaverApplied: Boolean(headroomStats) || xf.some((f) => f.startsWith("CAVEMAN:")),
       },
     };
+  }
+
+  // Hourly token-saver counters (Jev level + flags). Fire-and-forget.
+  if (smartSignal?.level != null || tokenSavers || xf.length) {
+    const flags = tokenSavers?.flags || xf;
+    const hasLossy = headroomEnabled || cavemanEnabled;
+    const lossyApplied = Boolean(headroomStats) || flags.some((f) => f.startsWith("CAVEMAN:"));
+    bumpTokenSaverHourly({
+      level: smartSignal?.level != null ? `L${smartSignal.level}` : "",
+      lossyApplied: lossyApplied ? 1 : 0,
+      lossyBlocked: hasLossy && !lossyApplied && !lossySaverAllowed ? 1 : 0,
+      lossyOff: !hasLossy ? 1 : 0,
+      rtkHits: rtkStats?.hits?.length || 0,
+      headroomSaved: headroomStats?.tokens_saved || 0,
+      caveman: flags.some((f) => f.startsWith("CAVEMAN:")) ? 1 : 0,
+      pxpipe: flags.some((f) => f.startsWith("PXPIPE:")) ? 1 : 0,
+      custom: flags.some((f) => f.startsWith("CUSTOMPROMPT:")) ? 1 : 0,
+      ponytail: flags.some((f) => f.startsWith("PONYTAIL:")) ? 1 : 0,
+    });
   }
 
   // Pin cache breakpoints to the final body — every saver above can reshape

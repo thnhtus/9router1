@@ -187,6 +187,25 @@ export const TABLES = {
     },
     primaryKey: "PRIMARY KEY (hour, comboName)",
   },
+  // Hourly token-saver counters (Jev-gated lossy savers + RTK), kept forever (small rows).
+  // level = 'L1'..'L4' when Jev classified the turn, '' when no signal (no smart combo).
+  tokenSaverHourly: {
+    columns: {
+      hour: "TEXT NOT NULL", // ISO, truncated to the hour (UTC)
+      level: "TEXT NOT NULL DEFAULT ''",
+      total: "INTEGER NOT NULL DEFAULT 0", // requests with a Jev signal (or savers applied)
+      lossyApplied: "INTEGER NOT NULL DEFAULT 0", // Headroom or Caveman actually ran
+      lossyBlocked: "INTEGER NOT NULL DEFAULT 0", // lossy enabled in settings but gated off by Jev
+      lossyOff: "INTEGER NOT NULL DEFAULT 0", // lossy savers disabled in settings
+      rtkHits: "INTEGER NOT NULL DEFAULT 0",
+      headroomSaved: "INTEGER NOT NULL DEFAULT 0", // tokens reported saved by Headroom
+      caveman: "INTEGER NOT NULL DEFAULT 0",
+      pxpipe: "INTEGER NOT NULL DEFAULT 0",
+      custom: "INTEGER NOT NULL DEFAULT 0",
+      ponytail: "INTEGER NOT NULL DEFAULT 0",
+    },
+    primaryKey: "PRIMARY KEY (hour, level)",
+  },
   // PXPIPE compression events (was DATA_DIR/pxpipe/events.jsonl), capped in src/lib/pxpipe/events.js.
   pxpipeEvents: {
     columns: {

@@ -104,6 +104,13 @@ describe("peekStreamForContent", () => {
     expect(p.outcome).toBe("empty");
   });
 
+  it("refusal text + content_filter in one frame → empty (blocked turn, not an answer)", async () => {
+    const BLOCKED = `data: {"id":"x","choices":[{"index":0,"delta":{"content":"blocked"},"finish_reason":"content_filter"}]}\n\n`;
+    const p = await peekStreamForContent(sseStream([ROLE, BLOCKED, DONE]));
+    expect(p.outcome).toBe("empty");
+    expect(p.finishReason).toBe("content_filter");
+  });
+
   it("content-filter empty → empty with content_filter reason (caller won't retry)", async () => {
     const p = await peekStreamForContent(sseStream([ROLE, FILTER_STOP, DONE]));
     expect(p.outcome).toBe("empty");

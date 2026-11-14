@@ -147,10 +147,9 @@ export function claudeToOpenAIResponse(chunk, state) {
         // explanation as the message text so the client shows *why* the turn is
         // empty instead of a blank reply.
         const refusalNote = chunk.delta.stop_reason === "refusal" && chunk.delta.stop_details?.explanation;
-        if (refusalNote) {
-          results.push(createChunk(state, { content: refusalNote }));
-        }
-        const finalChunk = createChunk(state, {}, state.finishReason);
+        // Same frame as the finish: the combo peek reads content and content_filter together
+        // and treats the turn as blocked, not as an answer.
+        const finalChunk = createChunk(state, refusalNote ? { content: refusalNote } : {}, state.finishReason);
 
         if (state.usage) {
           // Build OpenAI usage from the merged state (cache from message_start +

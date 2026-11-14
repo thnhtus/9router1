@@ -464,15 +464,10 @@ describe("handleChatCore Headroom diagnostics", () => {
     }
   });
 
-  it.each([
-    [1, true],
-    [2, true],
-    [3, false],
-    [4, false],
-  ])("heuristic fallback L%s runs Headroom: %s", async (level, runs) => {
+  it.each([1, 2, 3, 4])("heuristic fallback L%s does not run lossy savers (waits for confident Jev)", async (level) => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const body = { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] };
-    body[SMART_SIGNAL] = { level, levelConfidence: 0.8, source: "heuristic" };
+    body[SMART_SIGNAL] = { level, levelConfidence: 0.5, source: "heuristic" };
 
     await handleChatCore({
       body,
@@ -493,14 +488,7 @@ describe("handleChatCore Headroom diagnostics", () => {
       },
     });
 
-    if (runs) {
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/v1/compress"),
-        expect.any(Object)
-      );
-    } else {
-      expect(global.fetch).not.toHaveBeenCalled();
-      expect(log.info).toHaveBeenCalledWith("TOKEN_SAVER", expect.stringContaining("heuristic"));
-    }
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith("TOKEN_SAVER", expect.stringContaining("heuristic"));
   });
 });

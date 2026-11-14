@@ -14,7 +14,6 @@ import { ConfirmModal } from "./Modal";
 import {
   Sidebar as UISidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -42,6 +41,7 @@ const ROW = "h-8 gap-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] data-a
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { href: "/dashboard/provider-sniffer", label: "Provider Sniffer", icon: "radar" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
@@ -60,6 +60,7 @@ const navItems = [
 
 const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "receipt_long" },
+  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
@@ -262,13 +263,6 @@ export default function Sidebar() {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="border-t border-sidebar-border/60 pb-3">
-          <SidebarMenu>
-            {item("https://9remote.cc", "9Remote", "computer", { active: false, external: true, badge: "HOT" })}
-            {item("https://9english.net/", "9English", "translate", { active: false, external: true })}
-            {item("/dashboard/profile", "Settings", "settings")}
-          </SidebarMenu>
-        </SidebarFooter>
         <SidebarRail />
       </UISidebar>
 
