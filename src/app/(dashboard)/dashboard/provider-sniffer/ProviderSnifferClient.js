@@ -85,6 +85,10 @@ export default function ProviderSnifferClient() {
             filename: json.filename,
             provider: id,
           });
+        } else if (action === "checkFreeAll") {
+          const r = json.results;
+          alert(`Checked ${r.checked}, skipped ${r.skipped} (already free-usable).`);
+          await loadData();
         } else if (action === "checkFree") {
           const v = json.verdict;
           if (v?.freeUsable === "yes") alert(`✅ Free usable without billing (${v.source}, confidence ${v.confidence ?? "n/a"}).`);
@@ -167,6 +171,12 @@ export default function ProviderSnifferClient() {
               {busyId === "crawlLogos" ? "sync" : "image"}
             </span>{" "}
             Crawl Logos
+          </Button>
+          <Button variant="outline" size="sm" disabled={busyId === "checkFreeAll"} onClick={() => handleAction("checkFreeAll")}>
+            <span className={`material-symbols-outlined text-sm ${busyId === "checkFreeAll" ? "animate-spin" : ""}`}>
+              {busyId === "checkFreeAll" ? "sync" : "savings"}
+            </span>{" "}
+            Check Free All
           </Button>
           <Button variant="primary" size="sm" onClick={() => setAddModal(true)}>
             <span className="material-symbols-outlined text-sm">add</span> Add Candidate

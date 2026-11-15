@@ -3,6 +3,12 @@ vi.mock("@/lib/db/helpers/kvStore.js", () => ({ makeKv: () => ({}) }));
 vi.mock("open-sse/providers/index.js", () => ({ PROVIDERS: {} }));
 // Jev unreachable → checkFreeUsable must fall back to the keyword heuristic.
 vi.mock("@/sse/services/model.js", () => ({ getModelInfo: async () => null }));
+// No headless Chromium in unit tests → renderLocalText gracefully falls back.
+vi.mock("open-sse/services/lazyRuntime.js", () => ({ loadRuntimeDep: async () => { throw new Error("no playwright"); } }));
+vi.mock("open-sse/executors/browserExecutableCheck.js", () => ({
+  launchChromiumWithFallback: async () => { throw new Error("no chromium"); },
+  resolveSystemChromeExecutable: () => null,
+}));
 const { billingHeuristic, htmlToText, passesFreeGate, checkFreeUsable } = await import("../../src/lib/providerSniffer.js");
 
 describe("free-without-billing check", () => {
@@ -25,5 +31,25 @@ describe("free-without-billing check", () => {
   it("falls back to heuristic when Jev is unavailable", async () => {
     const v = await checkFreeUsable({ id: "x" }, { evidence: "No credit card required." });
     expect(v).toMatchObject({ freeUsable: "yes", source: "heuristic", evidenceSource: "rea" });
+  });
+});
+
+describe("billing evidence fetch", () => {
+  const ok = (text) => ({ ok: true, text: async () => text });
+  it("uses r.jina.ai rendered content first", async () => {
+    const fetchMock = vi.fn(async () => ok("Pricing: add a credit card to use the API"));
+    vi.stubGlobal("fetch", fetchMock);
+    const v = await checkFreeUsable({ id: "x", website: "https://x.dev" });
+    expect(fetchMock.mock.calls[0][0]).toBe("https://r.jina.ai/https://x.dev");
+    expect(v).toMatchObject({ freeUsable: "no", evidenceSource: "fetch" });
+    vi.unstubAllGlobals();
+  });
+  it("falls back to raw HTML when reader fails", async () => {
+    const fetchMock = vi.fn(async (u) => (u.startsWith("https://r.jina.ai/") ? { ok: false } : ok("<p>No credit card required</p>")));
+    vi.stubGlobal("fetch", fetchMock);
+    const v = await checkFreeUsable({ id: "x", website: "https://x.dev" });
+    expect(fetchMock.mock.calls.map(([u]) => u)).toContain("https://x.dev");
+    expect(v.freeUsable).toBe("yes");
+    vi.unstubAllGlobals();
   });
 });

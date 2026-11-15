@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { makeKv } from "@/lib/db/helpers/kvStore.js";
 import { PROVIDERS } from "open-sse/providers/index.js";
+import { loadRuntimeDep } from "open-sse/services/lazyRuntime.js";
+import { launchChromiumWithFallback, resolveSystemChromeExecutable } from "open-sse/executors/browserExecutableCheck.js";
 
 
 // Repo registry source tree (resolved from cwd). The sniffer writes real
@@ -203,15 +205,79 @@ export function billingHeuristic(text) {
 
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-/** Best-effort fetch of the provider site + /pricing as plain text. */
+// Headless Chromium shared across a checkFreeAll run; closed after 60s idle so no process lingers.
+let _browser = null;
+let _idleTimer = null;
+async function getBrowser() {
+  clearTimeout(_idleTimer);
+  _browser ??= (async () => {
+    const { chromium } = await loadRuntimeDep("playwright-core");
+    const executablePath = resolveSystemChromeExecutable();
+    return launchChromiumWithFallback(chromium, executablePath ? { headless: true, executablePath } : { headless: true });
+  })().catch((e) => { _browser = null; throw e; });
+  return _browser;
+}
+function scheduleBrowserClose() {
+  clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(async () => {
+    const b = _browser;
+    _browser = null;
+    (await b?.catch(() => null))?.close().catch(() => {});
+  }, 60000);
+  _idleTimer.unref?.();
+}
+
+/** Render a page locally with headless Chromium and return its innerText. */
+async function renderLocalText(u) {
+  try {
+    const browser = await getBrowser();
+    const ctx = await browser.newContext({ userAgent: BROWSER_UA });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(u, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(1500);
+      const text = await page.evaluate(() => document.body.innerText);
+      return text?.trim() ? text.slice(0, 4000) : null;
+    } finally {
+      await ctx.close().catch(() => {});
+      scheduleBrowserClose();
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Rendered-content evidence: local Chromium first, then the r.jina.ai reader,
+ * then a raw HTML fetch. Fallbacks keep evidence working when a step is down.
+ */
+async function fetchPageEvidence(u) {
+  const local = await renderLocalText(u);
+  if (local) return local;
+  try {
+    const readerRes = await fetch(`https://r.jina.ai/${u}`, {
+      headers: { "User-Agent": BROWSER_UA },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (readerRes.ok) {
+      const text = await readerRes.text();
+      if (text.trim()) return text.slice(0, 4000);
+    }
+  } catch { /* reader down */ }
+  const res = await fetch(u, { headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(12000) });
+  if (!res.ok) return null;
+  return htmlToText(await res.text()).slice(0, 2000);
+}
+
+/** Best-effort evidence of the provider site + /pricing as text. */
 async function gatherBillingEvidence(c) {
   const urls = [c.pricingUrl, c.website];
   try { if (c.website) urls.push(new URL("/pricing", c.website).toString()); } catch { /* bad url */ }
   const chunks = [];
   for (const u of [...new Set(urls.filter(Boolean))].slice(0, 3)) {
     try {
-      const res = await fetch(u, { headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(12000) });
-      if (res.ok) chunks.push(`[${u}] ${htmlToText(await res.text()).slice(0, 2000)}`);
+      const text = await fetchPageEvidence(u);
+      if (text) chunks.push(`[${u}] ${text}`);
     } catch { /* unreachable page */ }
   }
   return chunks.join("\n");

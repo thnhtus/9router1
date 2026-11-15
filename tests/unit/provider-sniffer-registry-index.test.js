@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 vi.mock("@/lib/db/helpers/kvStore.js", () => ({ makeKv: () => ({}) }));
 vi.mock("open-sse/providers/index.js", () => ({ PROVIDERS: {} }));
+vi.mock("open-sse/services/lazyRuntime.js", () => ({ loadRuntimeDep: async () => { throw new Error("no playwright"); } }));
+vi.mock("open-sse/executors/browserExecutableCheck.js", () => ({
+  launchChromiumWithFallback: async () => { throw new Error("no chromium"); },
+  resolveSystemChromeExecutable: () => null,
+}));
 const { addToRegistryIndex } = await import("../../src/lib/providerSniffer.js");
 
 const SRC = `// Auto-generated

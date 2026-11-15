@@ -112,8 +112,31 @@ export async function POST(request) {
         : undefined;
       const verdict = await checkFreeUsable({ ...target }, { evidence, evidenceSource: body.evidenceSource });
       target.freeCheck = verdict;
+      if (verdict.freeUsable === "no") target.status = "ignored";
       await WRITE_SNIFFER_PROVIDERS(providers);
       return NextResponse.json({ ok: true, verdict, provider: target });
+    }
+
+    if (action === "checkFreeAll") {
+      const results = { checked: 0, skipped: 0, yes: 0, no: 0, unknown: 0 };
+      for (const p of providers) {
+        // Skip providers already confirmed free-usable.
+        if (p.freeCheck?.freeUsable === "yes") {
+          results.skipped++;
+          continue;
+        }
+        const verdict = await checkFreeUsable({ ...p }, {});
+        p.freeCheck = verdict;
+        results.checked++;
+        if (verdict.freeUsable === "yes") results.yes++;
+        else if (verdict.freeUsable === "no") {
+          results.no++;
+          p.status = "ignored";
+        }
+        else results.unknown++;
+      }
+      await WRITE_SNIFFER_PROVIDERS(providers);
+      return NextResponse.json({ ok: true, results });
     }
 
     if (action === "updateStatus") {
