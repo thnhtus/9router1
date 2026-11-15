@@ -50,6 +50,7 @@ const navItems = [
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   { href: "/dashboard/jev-router", label: "Jev Router", icon: "psychology" },
   { href: "/dashboard/model-stats", label: "Model Stats", icon: "leaderboard" },
+  { href: "/dashboard/knowledge-graph", label: "Knowledge Graph", icon: "hub" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
   // { href: "/dashboard/cli-agents", label: "CLI Agents", icon: "smart_toy" }, // Hidden

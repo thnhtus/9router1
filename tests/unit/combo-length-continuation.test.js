@@ -50,6 +50,22 @@ describe("continueOnLength", () => {
     expect(r.finishes).toEqual(["length"]);
   });
 
+  it("continues on the next member with the original body when a length stop produced no text", async () => {
+    const calls = [];
+    const first = sse([frame({ content: "" }), frame({}, "length"), "data: [DONE]\n\n"]);
+    const out = continueOnLength(first, {
+      body,
+      models: ["a", "b"],
+      from: 0,
+      handleSingleModel: async (b, m) => { calls.push({ b, m }); return sse([frame({ content: "ok" }), frame({}, "stop"), "data: [DONE]\n\n"]); },
+    });
+    const r = await collect(out);
+    expect(r.text).toBe("ok");
+    expect(r.finishes).toEqual(["stop"]);
+    expect(calls[0].m).toBe("b");
+    expect(JSON.stringify(calls[0].b)).toBe(JSON.stringify(body));
+  });
+
   it("does not continue a cut-off tool call", async () => {
     let called = false;
     const first = sse([frame({ content: "x", tool_calls: [{ index: 0, function: { name: "f", arguments: "{" } }] }), frame({}, "length")]);
@@ -64,6 +80,17 @@ describe("continueOnLength", () => {
     const first = sse([frame({ content: "x", tool_calls: [{ index: 0, function: { name: "f", arguments: "{" } }] }), frame({}, "length")]);
     await collect(continueOnLength(first, { body, models: ["a", "b"], from: 0, log, handleSingleModel: async () => { throw new Error("unexpected"); } }));
     expect(warns).toEqual(["length not continued: cut-off tool call"]);
+  });
+
+  it("does not retry when the hop limit is reached with empty text", async () => {
+    const warns = [];
+    const leg = () => sse([frame({ content: "" }), frame({}, "length"), "data: [DONE]\n\n"]);
+    const log = { info() {}, warn: (_t, m) => warns.push(m) };
+    const out = continueOnLength(leg(), { body, models: ["a", "b"], from: 0, maxHops: 2, log, handleSingleModel: async () => leg() });
+    const r = await collect(out);
+    expect(r.text).toBe("");
+    expect(r.finishes).toEqual(["length"]);
+    expect(warns.some((w) => w.includes("hop limit 2 reached"))).toBe(true);
   });
 
   it("ends with length + [DONE] when the continuation fails", async () => {

@@ -49,6 +49,9 @@ export function addUsage(a, b) {
 }
 
 function buildContBody(body, text, stream) {
+  // Cut before any answer text (e.g. a thinking-only runaway): nothing to continue, so the
+  // next member retries the original request.
+  if (!text) return stream !== undefined ? { ...body, stream } : body;
   if (Array.isArray(body.messages)) {
     return {
       ...body,
@@ -73,7 +76,7 @@ function buildContBody(body, text, stream) {
 const hasContinuationInput = (body) => Array.isArray(body?.messages) || body?.input !== undefined;
 
 // Why a length stop is passed through to the client instead of continued (logged so the cause is visible).
-const bailReason = (hasTools, text, maxHops) => (hasTools ? "cut-off tool call" : !text ? "no text yet" : `hop limit ${maxHops} reached`);
+const bailReason = (hasTools, maxHops) => (hasTools ? "cut-off tool call" : `hop limit ${maxHops} reached`);
 
 export function continueOnLength(response, { body, models, from, handleSingleModel, log, maxHops = MAX_HOPS }) {
   if (!response?.body || maxHops <= 0 || !hasContinuationInput(body) || !models?.length) return response;
@@ -120,8 +123,8 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
       if (d.tool_calls?.length) hasTools = true;
     }
     const choice = obj.choices[0];
-    if (choice?.finish_reason !== "length" || hasTools || !text || hops >= maxHops) {
-      if (choice?.finish_reason === "length") log?.warn?.("COMBO", `length not continued: ${bailReason(hasTools, text, maxHops)}`);
+    if (choice?.finish_reason !== "length" || hasTools || hops >= maxHops) {
+      if (choice?.finish_reason === "length") log?.warn?.("COMBO", `length not continued: ${bailReason(hasTools, maxHops)}`);
       return dirty ? `data: ${JSON.stringify(obj)}` : line;
     }
     lastFinish = { fmt: "openai", obj };
@@ -149,13 +152,13 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
     }
     if (obj.type === "message_delta") {
       const mergedLeg = legUsage ? { ...legUsage, ...obj.usage } : obj.usage;
-      if (obj.delta?.stop_reason === "max_tokens" && !hasTools && text && hops < maxHops) {
+      if (obj.delta?.stop_reason === "max_tokens" && !hasTools && hops < maxHops) {
         carried = addUsage(carried, mergedLeg);
         lastFinish = { fmt: "claude", event: pendingEvent, obj };
         cut = true;
         return null;
       }
-      if (obj.delta?.stop_reason === "max_tokens") log?.warn?.("COMBO", `max_tokens not continued: ${bailReason(hasTools, text, maxHops)}`);
+      if (obj.delta?.stop_reason === "max_tokens") log?.warn?.("COMBO", `max_tokens not continued: ${bailReason(hasTools, maxHops)}`);
       if (carried || mergedLeg) { obj.usage = addUsage(carried, mergedLeg); carried = null; }
       return formatData(obj);
     }
@@ -179,7 +182,7 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
       text += obj.delta;
     }
     if (obj.type === "response.output_item.done" && obj.item) completedItems.push(obj.item);
-    if (obj.type === "response.incomplete" && obj.response?.incomplete_details?.reason === "max_output_tokens" && !hasTools && text && hops < maxHops) {
+    if (obj.type === "response.incomplete" && obj.response?.incomplete_details?.reason === "max_output_tokens" && !hasTools && hops < maxHops) {
       carried = addUsage(carried, obj.response?.usage);
       if (!completedItems.length && Array.isArray(obj.response?.output)) completedItems = [...obj.response.output];
       lastFinish = { fmt: "responses", event: pendingEvent, obj };
@@ -187,7 +190,7 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
       return null;
     }
     if (obj.type === "response.incomplete" && obj.response?.incomplete_details?.reason === "max_output_tokens") {
-      log?.warn?.("COMBO", `max_output_tokens not continued: ${bailReason(hasTools, text, maxHops)}`);
+      log?.warn?.("COMBO", `max_output_tokens not continued: ${bailReason(hasTools, maxHops)}`);
     }
     if ((obj.type === "response.completed" || obj.type === "response.incomplete") && obj.response) {
       if (carried) { obj.response.usage = addUsage(carried, obj.response.usage || {}); carried = null; }
@@ -295,7 +298,7 @@ function inspectJsonLeg(json) {
     const piece = typeof c.message.content === "string" ? c.message.content : "";
     return {
       fmt: "openai", piece, usage: json.usage,
-      truncated: c.finish_reason === "length" && !c.message.tool_calls?.length && piece.length > 0,
+      truncated: c.finish_reason === "length" && !c.message.tool_calls?.length,
     };
   }
   if (json.type === "message" && Array.isArray(json.content)) {
@@ -303,7 +306,7 @@ function inspectJsonLeg(json) {
     const hasTools = json.content.some((b) => b?.type === "tool_use");
     return {
       fmt: "claude", piece, usage: json.usage,
-      truncated: json.stop_reason === "max_tokens" && !hasTools && piece.length > 0,
+      truncated: json.stop_reason === "max_tokens" && !hasTools,
     };
   }
   if (json.object === "response" && Array.isArray(json.output)) {
@@ -312,7 +315,7 @@ function inspectJsonLeg(json) {
       : [])).join("");
     const hasTools = json.output.some((o) => o?.type === "function_call" || o?.type === "custom_tool_call");
     const truncated = ((json.status === "incomplete" && json.incomplete_details?.reason === "max_output_tokens") || json.status === "length")
-      && !hasTools && piece.length > 0;
+      && !hasTools;
     return { fmt: "responses", piece, usage: json.usage, truncated };
   }
   return null;
@@ -347,7 +350,7 @@ export async function continueJsonOnLength(response, { body, models, from, handl
   const firstLeg = inspectJsonLeg(first);
   if (!firstLeg?.truncated) {
     if (firstLeg && (first?.choices?.[0]?.finish_reason === "length" || first?.stop_reason === "max_tokens" || first?.status === "incomplete")) {
-      log?.warn?.("COMBO", `length not continued: ${firstLeg.piece ? "cut-off tool call" : "no text yet"}`);
+      log?.warn?.("COMBO", "length not continued: cut-off tool call");
     }
     return response;
   }
