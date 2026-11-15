@@ -250,6 +250,22 @@ export const writeRoles = (roles) => kvSet("roles", roles);
  * Jev choice criteria for a combo: model → profile line, or null when nothing is known
  * (Jev then falls back to its own knowledge of the model). Never throws.
  */
+export async function getRoutingProfiles(models) {
+  const out = {};
+  try {
+    const catalog = await readCatalog();
+    const roles = await readRoles();
+    if (catalog?.models) {
+      for (const m of models) {
+        const entry = matchCatalog(m, catalog.models);
+        const profile = buildProfile(m, entry, roles[m], catalog.models);
+        out[m] = profile || null;
+      }
+    }
+  } catch { /* fail open: Jev routes on cost tier + its own knowledge */ }
+  return out;
+}
+
 /** { model: cost tier } for grouping Jev's probabilities; "unknown" when uncatalogued. */
 export async function getModelTiers(models) {
   const out = {};
