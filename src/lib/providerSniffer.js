@@ -3,6 +3,7 @@ import path from "node:path";
 import { makeKv } from "@/lib/db/helpers/kvStore.js";
 import { PROVIDERS } from "open-sse/providers/index.js";
 
+
 // Repo registry source tree (resolved from cwd). The sniffer writes real
 // provider files here so installed candidates become first-class registry entries.
 const REGISTRY_DIR = path.join(process.cwd(), "open-sse", "providers", "registry");
@@ -27,6 +28,8 @@ export function sanitizeRegistryId(id) {
 export async function installToRegistry(candidate) {
   const id = sanitizeRegistryId(candidate?.id);
   if (!id) throw new Error("Invalid provider id");
+  // Global CLI installs run from an arbitrary cwd with only a built bundle — no source to write into.
+  if (!fs.existsSync(REGISTRY_INDEX)) throw new Error(`Registry source not found at ${REGISTRY_DIR}; install only works when 9router runs from a repo checkout`);
   const file = path.join(REGISTRY_DIR, `${id}.js`);
   if (fs.existsSync(file)) throw new Error(`Provider ${id} already installed (${id}.js exists)`);
 
@@ -176,6 +179,107 @@ export async function verifyCandidate(candidate, apiKey = "") {
     };
   }
 }
+
+/** Strip an HTML page down to readable text for Jev evidence (no parser dep). */
+export function htmlToText(html) {
+  return String(html || "")
+    .replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Fallback when Jev is unreachable. Billing phrases win over "no card" phrases
+// ("no card for the playground, add a payment method for API keys" → no).
+const NO_BILLING_RE = /(no credit card|without a credit card|no card required|no payment required|free forever)/i;
+const BILLING_RE = /(add (a )?(credit card|billing|payment method)|payment method required|billing required|requires? (a )?(credit card|payment method))/i;
+export function billingHeuristic(text) {
+  if (BILLING_RE.test(text)) return "no";
+  if (NO_BILLING_RE.test(text)) return "yes";
+  return "unknown";
+}
+
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/** Best-effort fetch of the provider site + /pricing as plain text. */
+async function gatherBillingEvidence(c) {
+  const urls = [c.pricingUrl, c.website];
+  try { if (c.website) urls.push(new URL("/pricing", c.website).toString()); } catch { /* bad url */ }
+  const chunks = [];
+  for (const u of [...new Set(urls.filter(Boolean))].slice(0, 3)) {
+    try {
+      const res = await fetch(u, { headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(12000) });
+      if (res.ok) chunks.push(`[${u}] ${htmlToText(await res.text()).slice(0, 2000)}`);
+    } catch { /* unreachable page */ }
+  }
+  return chunks.join("\n");
+}
+
+/**
+ * Is the provider usable without adding billing (card / paid plan)? Evidence = REA recon
+ * text posted by the agent (opts.evidence) or a plain fetch of website + /pricing.
+ * Jev (System One, free oc/jev-1.13-free) judges it; keyword heuristic if Jev is down.
+ * @returns {Promise<{freeUsable:"yes"|"no"|"unknown", confidence:number|null, source:string, evidence:string|null, checkedAt:string, error?:string}>}
+ */
+export async function checkFreeUsable(candidate, opts = {}) {
+  const checkedAt = new Date().toISOString();
+  const evidence = String(opts.evidence || (await gatherBillingEvidence(candidate))).slice(0, 6000);
+  if (!evidence.trim()) return { freeUsable: "unknown", confidence: null, source: "no-evidence", evidence: null, checkedAt };
+  const routerModel = opts.routerModel || "oc/jev-1.13-free";
+  const base = { evidence: evidence.slice(0, 1500), evidenceSource: opts.evidence ? opts.evidenceSource || "rea" : "fetch", checkedAt };
+
+  try {
+    const { handleSystemoneCore } = await import("open-sse/handlers/systemoneCore.js");
+    const { getModelInfo } = await import("@/sse/services/model.js");
+    const { getProviderCredentials } = await import("@/sse/services/auth.js");
+    const { checkAndRefreshToken } = await import("@/sse/services/tokenRefresh.js");
+
+    const { provider, model } = (await getModelInfo(routerModel)) || {};
+    if (!provider) throw new Error(`unknown Jev model ${routerModel}`);
+    const creds = await getProviderCredentials(provider, new Set(), model);
+    if (!creds || creds.allRateLimited) throw new Error(`no credentials for ${provider}`);
+
+    const result = await handleSystemoneCore({
+      body: {
+        model,
+        state: `Provider: ${candidate.name || candidate.id}\nWebsite: ${candidate.website || ""}\nAPI: ${candidate.baseUrl || ""}\nCatalog note: ${candidate.notice || ""}\n\nEvidence:\n${evidence}`,
+        questions: {
+          freeUsable: {
+            type: "choice",
+            instructions: "Can a new user call this API for free WITHOUT first adding a credit card, billing method or paid plan? " +
+              "yes = free usage needs no card/billing. no = card/billing/top-up/paid plan required before requests work (one-off trial credits that need a card count as no). " +
+              "unknown = evidence does not say.",
+            criteria: { yes: null, no: null, unknown: null },
+          },
+        },
+      },
+      modelInfo: { provider, model },
+      credentials: await checkAndRefreshToken(provider, creds),
+      timeoutMs: 20000,
+    });
+    if (!result?.success) throw new Error(result?.error || `Jev HTTP ${result?.status}`);
+    const a = (await result.response.json())?.answers?.freeUsable;
+    const choice = String(a?.choice || "").toLowerCase();
+    if (!["yes", "no", "unknown"].includes(choice)) throw new Error("Jev gave no answer");
+    const conf = a.confidence ?? null;
+    // An explicit billing phrase overrides Jev, so "add a credit card" is never greenlit.
+    // Low confidence is kept as-is; passesFreeGate rejects it.
+    if (choice !== "no" && billingHeuristic(evidence) === "no") {
+      return { freeUsable: "no", confidence: null, source: "heuristic", jevChoice: choice, ...base };
+    }
+    return { freeUsable: choice, confidence: conf, source: `jev:${routerModel}`, ...base };
+  } catch (err) {
+    return { freeUsable: billingHeuristic(evidence), confidence: null, source: "heuristic", error: err.message, ...base };
+  }
+}
+
+/** Install gate: only a Jev "yes" with confidence >= 0.6. A heuristic "yes" (Jev down) never passes. */
+export const passesFreeGate = (p) => {
+  const fc = p?.freeCheck;
+  return fc?.freeUsable === "yes" && String(fc.source).startsWith("jev:") && typeof fc.confidence === "number" && fc.confidence >= 0.6;
+};
 
 /**
  * Check if candidate provider ID or baseUrl already exists in 9router built-in registry

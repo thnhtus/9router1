@@ -72,6 +72,9 @@ function buildContBody(body, text, stream) {
 
 const hasContinuationInput = (body) => Array.isArray(body?.messages) || body?.input !== undefined;
 
+// Why a length stop is passed through to the client instead of continued (logged so the cause is visible).
+const bailReason = (hasTools, text, maxHops) => (hasTools ? "cut-off tool call" : !text ? "no text yet" : `hop limit ${maxHops} reached`);
+
 export function continueOnLength(response, { body, models, from, handleSingleModel, log, maxHops = MAX_HOPS }) {
   if (!response?.body || maxHops <= 0 || !hasContinuationInput(body) || !models?.length) return response;
   const enc = new TextEncoder();
@@ -118,6 +121,7 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
     }
     const choice = obj.choices[0];
     if (choice?.finish_reason !== "length" || hasTools || !text || hops >= maxHops) {
+      if (choice?.finish_reason === "length") log?.warn?.("COMBO", `length not continued: ${bailReason(hasTools, text, maxHops)}`);
       return dirty ? `data: ${JSON.stringify(obj)}` : line;
     }
     lastFinish = { fmt: "openai", obj };
@@ -151,6 +155,7 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
         cut = true;
         return null;
       }
+      if (obj.delta?.stop_reason === "max_tokens") log?.warn?.("COMBO", `max_tokens not continued: ${bailReason(hasTools, text, maxHops)}`);
       if (carried || mergedLeg) { obj.usage = addUsage(carried, mergedLeg); carried = null; }
       return formatData(obj);
     }
@@ -180,6 +185,9 @@ export function continueOnLength(response, { body, models, from, handleSingleMod
       lastFinish = { fmt: "responses", event: pendingEvent, obj };
       cut = true;
       return null;
+    }
+    if (obj.type === "response.incomplete" && obj.response?.incomplete_details?.reason === "max_output_tokens") {
+      log?.warn?.("COMBO", `max_output_tokens not continued: ${bailReason(hasTools, text, maxHops)}`);
     }
     if ((obj.type === "response.completed" || obj.type === "response.incomplete") && obj.response) {
       if (carried) { obj.response.usage = addUsage(carried, obj.response.usage || {}); carried = null; }
@@ -337,7 +345,12 @@ export async function continueJsonOnLength(response, { body, models, from, handl
   if (!ct.includes("application/json") || maxHops <= 0 || !hasContinuationInput(body) || !models?.length) return response;
   const first = await response.clone().json().catch(() => null);
   const firstLeg = inspectJsonLeg(first);
-  if (!firstLeg?.truncated) return response;
+  if (!firstLeg?.truncated) {
+    if (firstLeg && (first?.choices?.[0]?.finish_reason === "length" || first?.stop_reason === "max_tokens" || first?.status === "incomplete")) {
+      log?.warn?.("COMBO", `length not continued: ${firstLeg.piece ? "cut-off tool call" : "no text yet"}`);
+    }
+    return response;
+  }
   response.body?.cancel?.().catch(() => {});
 
   let json = first, leg = firstLeg, text = "", usage = null, hops = 0;

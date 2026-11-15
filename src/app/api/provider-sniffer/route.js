@@ -6,6 +6,8 @@ import {
   WRITE_SNIFFER_SETTINGS,
   seedInitialCandidatesIfEmpty,
   verifyCandidate,
+  checkFreeUsable,
+  passesFreeGate,
   isAlreadyInRegistry,
   generateRegistryDraft,
   scanFreeLlmCatalog,
@@ -99,6 +101,21 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, result: res, provider: target });
     }
 
+    if (action === "checkFree") {
+      const target = providers.find((p) => p.id === id);
+      if (!target) {
+        return NextResponse.json({ error: `Provider ${id} not found` }, { status: 404 });
+      }
+
+      const evidence = typeof body.evidence === "string" && body.evidence.trim()
+        ? body.evidence.trim()
+        : undefined;
+      const verdict = await checkFreeUsable({ ...target }, { evidence, evidenceSource: body.evidenceSource });
+      target.freeCheck = verdict;
+      await WRITE_SNIFFER_PROVIDERS(providers);
+      return NextResponse.json({ ok: true, verdict, provider: target });
+    }
+
     if (action === "updateStatus") {
       const target = providers.find((p) => p.id === id);
       if (!target) {
@@ -124,6 +141,12 @@ export async function POST(request) {
       const target = providers.find((p) => p.id === id);
       if (!target) {
         return NextResponse.json({ error: `Provider ${id} not found` }, { status: 404 });
+      }
+
+      if (!body.force && !passesFreeGate(target)) {
+        return NextResponse.json({
+          error: `Provider ${target.id} has not passed the free-without-billing check (Jev). Run \"Check free (Jev)\" first; use force: true to override.`,
+        }, { status: 409 });
       }
 
       const dupeCheck = isAlreadyInRegistry(target.id, target.baseUrl);

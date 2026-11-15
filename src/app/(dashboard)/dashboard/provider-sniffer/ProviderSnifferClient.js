@@ -12,6 +12,12 @@ const STATUS_BADGE = {
   failed: { variant: "error", label: "Failed" },
 };
 
+const FREE_BADGE = {
+  yes: { variant: "success", label: "Free usable", icon: "check_circle" },
+  no: { variant: "error", label: "Needs billing", icon: "credit_card_off" },
+  unknown: { variant: "default", label: "Free not checked", icon: "help_outline" },
+};
+
 export default function ProviderSnifferClient() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +85,12 @@ export default function ProviderSnifferClient() {
             filename: json.filename,
             provider: id,
           });
+        } else if (action === "checkFree") {
+          const v = json.verdict;
+          if (v?.freeUsable === "yes") alert(`✅ Free usable without billing (${v.source}, confidence ${v.confidence ?? "n/a"}).`);
+          else if (v?.freeUsable === "no") alert(`❌ Needs billing (${v.source}). Install blocked unless forced.`);
+          else alert(`? ${v?.error ? `Jev unavailable, heuristic: ` : "Unknown — "}${v?.freeUsable} (${v?.source}).`);
+          await loadData();
         } else {
           await loadData();
         }
@@ -113,6 +125,10 @@ export default function ProviderSnifferClient() {
 
   const providers = data?.providers || [];
   const stats = data?.stats || { total: 0, candidate: 0, verified: 0, registered: 0, ignored: 0, failed: 0 };
+  const freePasses = (pid) => {
+    const fc = providers.find((p) => p.id === pid)?.freeCheck;
+    return fc?.freeUsable === "yes" && String(fc.source).startsWith("jev:") && typeof fc.confidence === "number" && fc.confidence >= 0.6;
+  };
 
   const filtered = providers.filter((p) => {
     if (filter !== "all" && p.status !== filter) return false;
@@ -228,6 +244,8 @@ export default function ProviderSnifferClient() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {filtered.map((p) => {
           const badge = STATUS_BADGE[p.status] || STATUS_BADGE.candidate;
+          const free = FREE_BADGE[p.freeCheck?.freeUsable] || FREE_BADGE.unknown;
+          const freeOk = freePasses(p.id);
           const isBusy = busyId === p.id;
           return (
             <Card key={p.id} className="p-4 flex flex-col justify-between gap-3 hover:border-primary/40 transition-colors">
@@ -246,6 +264,9 @@ export default function ProviderSnifferClient() {
                       <h3 className="font-semibold text-sm text-foreground flex items-center gap-2">
                         {p.name}
                         <Badge variant={badge.variant}>{badge.label}</Badge>
+                        <Badge variant={free.variant}>
+                          <span className="material-symbols-outlined text-[12px]!">{free.icon}</span> {free.label}
+                        </Badge>
                       </h3>
                       <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
                         <span>Source: {p.discoveredFrom}</span>
@@ -256,6 +277,16 @@ export default function ProviderSnifferClient() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      title="Check free without billing (REA evidence → Jev)"
+                      disabled={isBusy}
+                      onClick={() => handleAction("checkFree", p.id)}
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    >
+                      <span className={`material-symbols-outlined text-base ${isBusy ? "animate-spin" : ""}`}>
+                        {isBusy ? "sync" : "savings"}
+                      </span>
+                    </button>
                     <button
                       title="Test Endpoint Ping"
                       disabled={isBusy}
@@ -289,6 +320,13 @@ export default function ProviderSnifferClient() {
                   {p.notice && <div className="text-foreground/80 font-sans mt-1">ℹ️ {p.notice}</div>}
                   {p.verificationError && <div className="text-error font-sans">❌ {p.verificationError}</div>}
                   {p.verificationNote && <div className="text-success font-sans">✅ {p.verificationNote} {p.latencyMs && `(${p.latencyMs}ms)`}</div>}
+                  {p.freeCheck && (
+                    <div className={`font-sans ${p.freeCheck.freeUsable === "yes" ? "text-success" : p.freeCheck.freeUsable === "no" ? "text-error" : "text-warning-foreground"}`}>
+                      {p.freeCheck.freeUsable === "yes" ? "✅" : p.freeCheck.freeUsable === "no" ? "❌" : "❔"} free without billing: <strong>{p.freeCheck.freeUsable}</strong>
+                      {" "}({p.freeCheck.source}{p.freeCheck.confidence != null ? `, ${Math.round(p.freeCheck.confidence * 100)}%` : ""})
+                      {p.freeCheck.error && <span className="text-muted-foreground"> — {p.freeCheck.error}</span>}
+                    </div>
+                  )}
                 </div>
 
                 {p.models && p.models.length > 0 && (
@@ -433,7 +471,8 @@ export default function ProviderSnifferClient() {
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={busyId === draftModal.provider}
+                  disabled={busyId === draftModal.provider || !freePasses(draftModal.provider)}
+                  title={freePasses(draftModal.provider) ? "Install to registry" : "Blocked: run Check free (Jev) first and pass"}
                   onClick={() => handleAction("install", draftModal.provider)}
                 >
                   <span className={`material-symbols-outlined text-sm ${busyId === draftModal.provider ? "animate-spin" : ""}`}>

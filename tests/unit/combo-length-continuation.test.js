@@ -58,6 +58,14 @@ describe("continueOnLength", () => {
     expect(r.finishes).toEqual(["length"]);
   });
 
+  it("logs why a length stop was not continued", async () => {
+    const warns = [];
+    const log = { info() {}, warn: (_t, m) => warns.push(m) };
+    const first = sse([frame({ content: "x", tool_calls: [{ index: 0, function: { name: "f", arguments: "{" } }] }), frame({}, "length")]);
+    await collect(continueOnLength(first, { body, models: ["a", "b"], from: 0, log, handleSingleModel: async () => { throw new Error("unexpected"); } }));
+    expect(warns).toEqual(["length not continued: cut-off tool call"]);
+  });
+
   it("ends with length + [DONE] when the continuation fails", async () => {
     const first = sse([frame({ content: "Hi" }), frame({}, "length"), "data: [DONE]\n\n"]);
     const r = await collect(continueOnLength(first, { body, models: ["a", "b"], from: 0, handleSingleModel: async () => new Response("x", { status: 503 }) }));
