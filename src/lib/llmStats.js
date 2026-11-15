@@ -189,8 +189,22 @@ export function scoreRanks(entry, catalog) {
   return out.sort((a, b) => a[1] - b[1]);
 }
 
+// Jev's level bands → the catalog categories that decide them (ranks are percentiles, lower = better).
+export const LEVEL_CATEGORIES = {
+  "L1-L2": ["general", "language", "knowledge"],
+  "L3-L4": ["code", "reasoning", "agents", "tool_calling"],
+};
+
+/** 0-100 (higher = better): mean of (100 - top%) over the band's categories; null when none are ranked. */
+export function fitScore(entry, catalog, band) {
+  if (!entry) return null;
+  const ranks = scoreRanks(entry, catalog).filter(([k]) => LEVEL_CATEGORIES[band].includes(k));
+  if (!ranks.length) return null;
+  return Math.round(ranks.reduce((sum, [, p]) => sum + (100 - p), 0) / ranks.length);
+}
+
 export function suggestRole(entry, catalog) {
-  return scoreRanks(entry, catalog)[0]?.[0] || "general";
+  return (entry ? scoreRanks(entry, catalog) : [])[0]?.[0] || "general";
 }
 
 /** One line Jev reads per model: role (only when set by the user), cost tier, price, category ranks. */
@@ -201,8 +215,13 @@ export function buildProfile(modelId, entry, role, catalog) {
   const fits = { free: "L1-L2", cheap: "L1-L2", mid: "L2-L3", premium: "L3-L4" }[tier];
   if (fits) parts.push(`fits ${fits}`);
   if (tier !== "free" && entry?.inPrice != null) parts.push(`price $${entry.inPrice}/$${entry.outPrice ?? "?"} per 1M in/out`);
-  const top = scoreRanks(entry, catalog).slice(0, 4);
+  const top = entry ? scoreRanks(entry, catalog).slice(0, 4) : [];
   if (top.length) parts.push(`rank ${top.map(([k, p]) => `${k} top ${p}%`).join(", ")}`);
+  if (!entry) parts.push("no catalog match");
+  for (const band of Object.keys(LEVEL_CATEGORIES)) {
+    const score = fitScore(entry, catalog, band);
+    if (score != null) parts.push(`fit ${band}: ${score}/100`);
+  }
   return parts.join("; ");
 }
 
@@ -241,15 +260,34 @@ export async function getModelTiers(models) {
   return out;
 }
 
-export async function getRoutingProfiles(models) {
-  const out = {};
-  for (const m of models) if (typeof m === "string" && m.trim()) out[m.trim()] = null;
-  try {
-    const [catalog, roles] = await Promise.all([readCatalog(), readRoles()]);
-    for (const m of Object.keys(out)) {
-      const entry = catalog?.models ? matchCatalog(m, catalog.models) : null;
-      if (entry || roles[m] || isFreeModel(m)) out[m] = buildProfile(m, entry, roles[m], catalog.models);
-    }
-  } catch { /* fail open: bare criteria */ }
-  return out;
+// C: the formula picks the model, Jev only grades the task level.
+// Allowed cost tiers per level, cheapest first (paid models only for L3-L4).
+export const LEVEL_TIERS = {
+  1: ["free", "cheap"],
+  2: ["free", "cheap"],
+  3: ["free", "cheap", "mid", "unknown"],
+  4: ["free", "cheap", "mid", "premium", "unknown"],
+};
+export const FIT_SPREAD = 10; // models within 10 fit points of the best share the load
+
+/**
+ * Pure pick: among catalogued candidates in the level's allowed tiers, take the best fit
+ * for the level's band, then a random one within FIT_SPREAD of it (spreads providers).
+ * Returns { choice, peers } or null when fewer than 2 candidates are catalogued
+ * (combo-of-combos like auto, or no catalog) so the caller keeps Jev's own pick.
+ */
+export function pickByLevel(models, level, catalog, random = Math.random) {
+  if (!Array.isArray(catalog) || !(level >= 1 && level <= 4)) return null;
+  const band = level <= 2 ? "L1-L2" : "L3-L4";
+  const known = [];
+  for (const m of models) {
+    const entry = matchCatalog(m, catalog);
+    if (entry) known.push({ m, tier: costTier(m, entry), s: fitScore(entry, catalog, band) ?? 0 });
+  }
+  if (known.length < 2) return null;
+  const allowed = known.filter((x) => LEVEL_TIERS[level].includes(x.tier));
+  const pool = allowed.length ? allowed : known; // nothing cheap enough: best of the rest
+  const best = Math.max(...pool.map((x) => x.s));
+  const near = pool.filter((x) => x.s >= best - FIT_SPREAD).map((x) => x.m);
+  return { choice: near[Math.floor(random() * near.length)], peers: near };
 }

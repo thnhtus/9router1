@@ -12,5 +12,5 @@ See [ui/taste.md](ui/taste.md)
 - Routing priority for the Jev router: cost first. Simple tasks (L1–L2) should go to free/cheap models from any provider, paid models (Claude, GPT) only for harder tasks (L3–L4). Load should be spread across providers, not one model repeated. Confidence: 0.4
 
 # Git workflow
-- Fine with committing all worktree changes (including pre-existing uncommitted ones) and pushing straight to master without a PR when they say "commit push toàn bộ" / "commit push đi" / "commit push hết đi" / "commit toàn bộ changes". Confidence: 0.85
+- Fine with committing all worktree changes (including pre-existing uncommitted ones) and pushing straight to master without a PR when they say "commit push toàn bộ" / "commit push đi" / "commit push hết đi" / "commit toàn bộ changes". Confidence: 0.9
 - Prefers working directly on master rather than a separate feature branch, even when the worktree has uncommitted changes, so don't suggest branching. Confidence: 0.65

@@ -2,7 +2,7 @@ import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { createHash } from "node:crypto";
-import { getRoutingProfiles, getModelTiers } from "@/lib/llmStats.js";
+import { getRoutingProfiles, getModelTiers, readCatalog, pickByLevel } from "@/lib/llmStats.js";
 import { appendJevLog, countJevSkip, recordBreakerEvent, loadOpenBreaker } from "@/lib/jevLogs.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import { getComboFairness, hydrateComboFairness, FAIR_ERR_TURNS } from "open-sse/services/combo.js";
@@ -224,6 +224,18 @@ async function evaluate({
       log?.warn?.("COMBO", "smart-router: response missing valid route choice");
       trace.error = "smart-router: response missing valid route choice";
       return null;
+    }
+
+    // C: the formula owns the model pick; Jev only supplies the level. On an
+    // unknown level or all-uncatalogued candidates, fall back to Jev's choice.
+    const catalog = await readCatalog();
+    if (catalog?.models && route.level) {
+      const picked = pickByLevel(models, route.level, catalog.models);
+      if (picked) {
+        trace.formulaPick = picked.choice;
+        route.choice = picked.choice;
+        route.peers = picked.peers;
+      }
     }
 
     return route;
