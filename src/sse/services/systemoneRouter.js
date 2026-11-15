@@ -15,6 +15,12 @@ import {
   groupRouteByTier,
 } from "open-sse/services/systemoneRouter.js";
 
+// Jev question instructions; also shown read-only on the Jev Router page.
+export const JEV_PROMPTS = {
+  route: "Pick the best fitting model whose role and scores match the task complexity. Use the cheapest tier that fits the level: for L1-L2 prefer free or cheap models (any provider); reserve premium/paid models (Claude, GPT) for L3-L4 or when no cheaper model fits. When several models fit equally, spread picks across providers instead of repeating the same one. Compare models from every provider on equal terms (Claude, GPT, Gemini, GLM, DeepSeek, Mistral, Grok, free/open models); do not favor one provider family by default. A model with missing profile fields is not disqualified; judge it on the info given and its fit for the level. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. Avoid models marked unreliable or failed recently.",
+  level: "Task level: L1 trivial lookup/formatting/chit-chat, L2 simple answer or single-file edit, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. Raise one step if exact precision is needed (code that must compile, money, legal text, data writes, strict output schema).",
+};
+
 // Same prompt + same candidates → same decision; skip the Jev round trip.
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 500;
@@ -183,13 +189,13 @@ async function evaluate({
       questions: {
         route: {
           type: "choice",
-          instructions: "Pick the best fitting model whose role and scores match the task complexity. Balance cost with model variety: do not default to the single cheapest option when multiple models fit. Compare models from every provider on equal terms (Claude, GPT, Gemini, GLM, DeepSeek, Mistral, Grok, free/open models); do not favor one provider family by default. A model with missing profile fields is not disqualified; judge it on the info given and its fit for the level. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. Avoid models marked unreliable or failed recently.",
+          instructions: JEV_PROMPTS.route,
           criteria,
         },
         // Same call, no extra round trip: the level gates lossy token savers (chatCore).
         level: {
           type: "choice",
-          instructions: "Task level: L1 trivial lookup/formatting/chit-chat, L2 simple answer or single-file edit, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. Raise one step if exact precision is needed (code that must compile, money, legal text, data writes, strict output schema).",
+          instructions: JEV_PROMPTS.level,
           criteria: { L1: null, L2: null, L3: null, L4: null },
         },
       },

@@ -9,6 +9,8 @@ See [ui/taste.md](ui/taste.md)
 
 - Runtime tracking state (e.g. combo model health/usage stats, per-request token-saver stats like rtkHits/headroomBytes/flags) should be stored in the DB, not just in process memory, so it survives restarts and can be shared across instances. When the agent flags a limitation like this, the user wants it fixed rather than just noted in a comment. Confidence: 0.5
 
+- Routing priority for the Jev router: cost first. Simple tasks (L1–L2) should go to free/cheap models from any provider, paid models (Claude, GPT) only for harder tasks (L3–L4). Load should be spread across providers, not one model repeated. Confidence: 0.4
+
 # Git workflow
 - Fine with committing all worktree changes (including pre-existing uncommitted ones) and pushing straight to master without a PR when they say "commit push toàn bộ" / "commit push đi" / "commit push hết đi" / "commit toàn bộ changes". Confidence: 0.85
 - Prefers working directly on master rather than a separate feature branch, even when the worktree has uncommitted changes, so don't suggest branching. Confidence: 0.65
