@@ -5,7 +5,7 @@ import { Card, Badge } from "@/shared/components";
 
 // Live view of recent combo runs, modelled on affectUI's Fallback Chain: the request
 // branches to each member in try order, failed branches break red, the answering one
-// runs on to the response. Data: GET /api/combos/traces (in-memory, last 50 runs).
+// runs on to the response. Data: GET /api/combos/traces (live ring + persisted SQLite, last 50 runs).
 const ROW = 46, GAP = 6, WIRE = 36, INITIAL_VISIBLE_SKIPPED = 1, INITIAL_RUNS = 8;
 const TONE = { waiting: "text-muted-foreground/50", trying: "text-primary", failed: "text-red-500", answered: "text-emerald-500", skipped: "text-muted-foreground/40" };
 const LABEL = { waiting: "Waiting", trying: "Trying...", answered: "Answered", skipped: "Not needed" };
