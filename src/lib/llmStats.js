@@ -289,10 +289,11 @@ export const FIT_SPREAD = 10; // models within 10 fit points of the best share t
 /**
  * Pure pick: among catalogued candidates in the level's allowed tiers, take the best fit
  * for the level's band, then a random one within FIT_SPREAD of it (spreads providers).
+ * `exclude` (models that just failed) is honoured unless it would empty the pool.
  * Returns { choice, peers } or null when fewer than 2 candidates are catalogued
  * (combo-of-combos like auto, or no catalog) so the caller keeps Jev's own pick.
  */
-export function pickByLevel(models, level, catalog, random = Math.random) {
+export function pickByLevel(models, level, catalog, random = Math.random, exclude = null) {
   if (!Array.isArray(catalog) || !(level >= 1 && level <= 4)) return null;
   const band = level <= 2 ? "L1-L2" : "L3-L4";
   const known = [];
@@ -301,9 +302,13 @@ export function pickByLevel(models, level, catalog, random = Math.random) {
     if (entry) known.push({ m, tier: costTier(m, entry), s: fitScore(entry, catalog, band) ?? 0 });
   }
   if (known.length < 2) return null;
-  const allowed = known.filter((x) => LEVEL_TIERS[level].includes(x.tier));
-  const pool = allowed.length ? allowed : known; // nothing cheap enough: best of the rest
-  const best = Math.max(...pool.map((x) => x.s));
-  const near = pool.filter((x) => x.s >= best - FIT_SPREAD).map((x) => x.m);
-  return { choice: near[Math.floor(random() * near.length)], peers: near };
+  const healthy = exclude?.size ? known.filter((x) => !exclude.has(x.m)) : known;
+  const choose = (list) => {
+    const allowed = list.filter((x) => LEVEL_TIERS[level].includes(x.tier));
+    const pool = allowed.length ? allowed : list; // nothing cheap enough: best of the rest
+    const best = Math.max(...pool.map((x) => x.s));
+    const near = pool.filter((x) => x.s >= best - FIT_SPREAD).map((x) => x.m);
+    return { choice: near[Math.floor(random() * near.length)], peers: near };
+  };
+  return choose(healthy.length ? healthy : known);
 }

@@ -60,6 +60,15 @@ export function addHealth(criteria, comboName) {
   return criteria;
 }
 
+/** Members that failed within FAIR_ERR_TURNS turns (e.g. 429 quota): the formula skips them. */
+export function recentFailures(comboName) {
+  const s = comboName && getComboFairness(comboName);
+  const out = new Set();
+  if (!s) return out;
+  for (const [m, st] of s.members) if (st?.errSeq != null && s.seq - st.errSeq <= FAIR_ERR_TURNS) out.add(m);
+  return out;
+}
+
 function cacheKey(body, models) {
   return createHash("sha256").update(JSON.stringify([extractPromptState(body), models])).digest("hex");
 }
@@ -117,7 +126,11 @@ export async function resolveSmartChoice(opts) {
       opts.log?.warn?.("COMBO", `smart-router: ${BREAKER_FAILS} failures in a row, pausing Jev for ${BREAKER_COOLDOWN_MS / 1000}s`);
     }
     if (route) {
+      // C: when the formula chose this request, prevent groupRouteByTier from
+      // overwriting route.choice with Jev's probability-based pick.
+      const formulaPeers = trace.formulaPick != null ? route.peers : null;
       route = groupRouteByTier(route, await getModelTiers(opts.models));
+      if (formulaPeers) Object.assign(route, { choice: trace.formulaPick, peers: formulaPeers });
       if (routeCache.size >= CACHE_MAX) routeCache.delete(routeCache.keys().next().value);
       routeCache.set(key, { route, at: Date.now() });
     }
@@ -228,14 +241,22 @@ async function evaluate({
 
     // C: the formula owns the model pick; Jev only supplies the level. On an
     // unknown level or all-uncatalogued candidates, fall back to Jev's choice.
+    // The audit trail rides in the logged response JSON (no schema change) so
+    // jevLogs shows what actually chose the model.
     const catalog = await readCatalog();
+    const jevChoice = route.choice;
     if (catalog?.models && route.level) {
-      const picked = pickByLevel(models, route.level, catalog.models);
+      const picked = pickByLevel(models, route.level, catalog.models, Math.random, recentFailures(comboName));
       if (picked) {
         trace.formulaPick = picked.choice;
         route.choice = picked.choice;
         route.peers = picked.peers;
       }
+    }
+    if (json && typeof json === "object") {
+      json._formula = trace.formulaPick
+        ? { pick: trace.formulaPick, level: route.level, jevChoice, peers: route.peers }
+        : { pick: null, level: route.level ?? null, jevChoice, reason: !route.level ? "no level" : !catalog?.models ? "no catalog" : "<2 catalogued" };
     }
 
     return route;

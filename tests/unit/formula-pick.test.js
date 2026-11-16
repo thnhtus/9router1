@@ -27,6 +27,13 @@ describe("pickByLevel (Option C formula)", () => {
     expect(pickByLevel([], 1, catalog)).toBeNull();
   });
 
+  it("skips models that just failed unless that empties the pool", () => {
+    const failed = new Set(["mid-1", "prem-1"]);
+    expect(pickByLevel(["free-1", "mid-1", "prem-1"], 4, catalog, () => 0, failed).choice).toBe("free-1");
+    const all = new Set(["free-1", "mid-1", "prem-1"]);
+    expect(pickByLevel(["free-1", "mid-1", "prem-1"], 4, catalog, () => 0, all)).not.toBeNull();
+  });
+
   it("returns null when fewer than 2 candidates are catalogued", () => {
     expect(pickByLevel(["unknown-a", "unknown-b"], 2, catalog)).toBeNull();
     expect(pickByLevel(["free-1"], 1, catalog)).toBeNull();
