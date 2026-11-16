@@ -1,16 +1,9 @@
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { recordComboCost, getCurrentCombo } from "open-sse/services/comboTrace.js";
 import { getAgentTag } from "open-sse/services/agentTag.js";
-
-// Read the trace id straight from the shared ALS (a global, so every compiled
-// copy of comboTrace.js writes to the same store) instead of importing a new
-// named export: a stale dev-server module would otherwise throw
-// "getCurrentTraceId is not a function" on every usage write.
-function currentTraceId() {
-  try { return globalThis.__comboTraceAls?.getStore()?.run?.id || null; } catch { return null; }
-}
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -306,10 +299,10 @@ export async function saveRequestUsage(entry) {
       }
 
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, combo, traceId, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, combo, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
-          getCurrentCombo(), currentTraceId(), entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+          getCurrentCombo(), entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
           stringifyJson(tokens), stringifyJson(entry.agent ? { agent: entry.agent } : {}),
         ]
@@ -936,14 +929,13 @@ export async function appendRequestLog(entry = {}) {
     if (isFailed) {
       const db = await getAdapter();
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, combo, traceId, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, combo, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           timestamp,
           e.provider || null,
           e.model || null,
           getCurrentCombo(),
-          currentTraceId(),
           e.connectionId || null,
           e.apiKey || null,
           e.endpoint || null,

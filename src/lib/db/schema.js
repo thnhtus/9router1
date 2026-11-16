@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -118,7 +118,6 @@ export const TABLES = {
       model: "TEXT",
       connectionId: "TEXT",
       combo: "TEXT",
-      traceId: "TEXT",
       apiKey: "TEXT",
       endpoint: "TEXT",
       promptTokens: "INTEGER DEFAULT 0",
@@ -158,21 +157,6 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
-  },
-  // Durable combo fallback-chain runs (same shape as comboTrace ring), so the
-  // Fallback Chain waterfall survives restarts and is shareable across instances.
-  comboTraces: {
-    columns: {
-      id: "TEXT PRIMARY KEY",
-      combo: "TEXT",
-      strategy: "TEXT",
-      startedAt: "TEXT NOT NULL",
-      endedAt: "TEXT",
-      status: "TEXT",
-      cost: "REAL",
-      attempts: "TEXT NOT NULL", // JSON array of attempt states
-    },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ct_started ON comboTraces(startedAt DESC)"],
   },
   // Jev (System One) routing audit: one row per decision, capped at 1000 (src/lib/jevLogs.js).
   jevLogs: {
