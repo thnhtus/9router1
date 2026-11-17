@@ -8,21 +8,18 @@
 
 import { NextResponse } from "next/server";
 import { saveRequestDetail } from "@/lib/db/repos/requestDetailsRepo.js";
-import { redact } from "@/lib/memory/evaluate.js";
+import { redact, scheduleSessionEval } from "@/lib/memory/evaluate.js";
 
 export const dynamic = "force-dynamic";
-
-const MAX_TEXT = 8000;
-const MAX_TOOLS = 50;
 function str(v) {
   if (typeof v === "string") return v;
   if (v == null) return "";
   return JSON.stringify(v);
 }
-const clip = (v, n = MAX_TEXT) => redact(str(v)).slice(0, n);
+const clip = (v, n) => redact(str(v)).slice(0, n ?? 8000);
 
 export function buildTurnDetail({ sessionId, harness, model, prompt, response, tools, status, timestamp }) {
-  const list = (Array.isArray(tools) ? tools : []).slice(0, MAX_TOOLS);
+  const list = (Array.isArray(tools) ? tools : []).slice(0, 50);
   const toolLines = list
     .map((t) => `- ${clip(t?.name, 120) || "tool"}(${clip(t?.input, 400)}) -> ${clip(t?.output, 400)}`)
     .join("\n");
@@ -50,6 +47,8 @@ export async function POST(request) {
   try {
     const detail = buildTurnDetail({ ...body, sessionId: sessionId.trim().slice(0, 200) });
     await saveRequestDetail(detail);
+    // Store path only schedules Jev; evaluateSession still gates on memoryEvalEnabled.
+    scheduleSessionEval(detail.sessionId, { ownerType: "agent", ownerId: `harness:${clip(body?.harness, 40) || "unknown"}` });
     return NextResponse.json({ ok: true, sessionId: detail.sessionId, id: detail.id ?? null });
   } catch (error) {
     console.error("Error ingesting harness turn:", error);

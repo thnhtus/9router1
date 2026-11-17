@@ -82,6 +82,30 @@ export default function MemoryClient() {
     }
   };
 
+  const [harness, setHarness] = useState([]);
+  const [evaluating, setEvaluating] = useState("");
+  const [evalMsg, setEvalMsg] = useState("");
+
+  useEffect(() => {
+    fetch("/api/memory/harness-turns").then((r) => r.json()).then((d) => setHarness(d.sessions || [])).catch(() => {});
+  }, [reloadKey]);
+
+  const evaluate = async (s) => {
+    setEvaluating(s.sessionId);
+    setEvalMsg("");
+    try {
+      const res = await fetch("/api/memory/evaluate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: s.sessionId, ownerType: "agent", ownerId: `harness:${s.harness}` }) });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Evaluate failed");
+      setEvalMsg(data.candidateCreated ? `Candidate filed for ${s.sessionId}` : data.skipped || `Not filed (mean=${data.scores?.mean ?? "?"}, passed=${data.passed})`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setEvalMsg(e.message || "Evaluate failed");
+    } finally {
+      setEvaluating("");
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!confirm("Delete this memory?")) return;
     try {
@@ -158,6 +182,44 @@ export default function MemoryClient() {
       </Card>
 
       {error && <div className="text-red-500 text-sm">{error}</div>}
+
+      <Card className="p-0 overflow-hidden">
+        <div className="p-3 text-sm font-medium">Harness sessions (captured via /api/v1/memory/ingest)</div>
+        {evalMsg && <div className="px-3 pb-2 text-xs text-muted-foreground">{evalMsg}</div>}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left p-2">Harness</th>
+                <th className="text-left p-2">Session</th>
+                <th className="text-left p-2">Turns</th>
+                <th className="text-left p-2">Errors</th>
+                <th className="text-left p-2">Last turn</th>
+                <th className="text-left p-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {harness.map((s) => (
+                <tr key={s.sessionId} className="border-t">
+                  <td className="p-2"><Badge>{s.harness}</Badge></td>
+                  <td className="p-2 font-mono text-xs">{s.sessionId}</td>
+                  <td className="p-2">{s.count}</td>
+                  <td className="p-2">{s.errors}</td>
+                  <td className="p-2 whitespace-nowrap">{new Date(s.lastAt).toLocaleString()}</td>
+                  <td className="p-2">
+                    <Button size="sm" onClick={() => evaluate(s)} disabled={evaluating === s.sessionId}>
+                      {evaluating === s.sessionId ? "Evaluating…" : "Evaluate"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {harness.length === 0 && (
+                <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">No harness sessions yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">

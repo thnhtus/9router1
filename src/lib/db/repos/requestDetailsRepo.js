@@ -187,6 +187,30 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
+// Harness turns are stored as rows with provider='harness:<name>'. Aggregate them so the
+// dashboard can show what harnesses captured and offer manual Jev evaluation.
+export async function listHarnessSessions({ limit = 50 } = {}) {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT data FROM requestDetails WHERE provider LIKE 'harness:%' ORDER BY timestamp DESC LIMIT ?`, [Math.max(1, Math.min(500, limit))]);
+  const bySession = new Map();
+  for (const r of rows) {
+    const d = parseJson(r.data, null);
+    if (!d?.sessionId) continue;
+    let s = bySession.get(d.sessionId);
+    if (!s) {
+      s = { sessionId: d.sessionId, harness: String(d.provider || "").replace(/^harness:/, ""), count: 0, errors: 0, providers: new Set(), models: new Set(), firstAt: d.timestamp, lastAt: d.timestamp };
+      bySession.set(d.sessionId, s);
+    }
+    if (d.timestamp < s.firstAt) s.firstAt = d.timestamp;
+    if (d.timestamp > s.lastAt) s.lastAt = d.timestamp;
+    s.count += 1;
+    if (d.status === "error") s.errors += 1;
+    if (d.provider) s.providers.add(d.provider);
+    if (d.model) s.models.add(d.model);
+  }
+  return [...bySession.values()].sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt))).map((s) => ({ ...s, providers: [...s.providers], models: [...s.models] }));
+}
+
 export async function getDistinctProviders() {
   const db = await getAdapter();
   const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);

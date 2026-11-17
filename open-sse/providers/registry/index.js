@@ -171,6 +171,7 @@ import p174 from "./bytez.js";
 import p175 from "./aihubmix.js";
 import p176 from "./z-ai.js";
 import p177 from "./anyapi.js";
+import p178 from "./vertex-ai-express.js";
 export default [
   p0,
   p1,
@@ -342,4 +343,5 @@ export default [
   p175,
   p176,
   p177,
+  p178,
 ];

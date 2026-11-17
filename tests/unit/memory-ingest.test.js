@@ -1,8 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 
 const saved = [];
+const scheduled = [];
 vi.mock("@/lib/db/repos/requestDetailsRepo.js", () => ({
   saveRequestDetail: async (d) => { saved.push(d); },
+}));
+vi.mock("@/lib/memory/evaluate.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  scheduleSessionEval: (sessionId, opts) => { scheduled.push({ sessionId, ...opts }); },
 }));
 
 const { POST, buildTurnDetail } = await import("@/app/api/v1/memory/ingest/route.js");
@@ -37,6 +42,7 @@ describe("harness turn ingest", () => {
     expect(d.provider).toBe("harness:pi");
     expect(d.request.messages[0]).toEqual({ role: "user", content: "fix the migration" });
     expect(d.response.content).toContain("npm run migrate");
+    expect(scheduled.at(-1)).toEqual({ sessionId: "s2", ownerType: "agent", ownerId: "harness:pi" });
   });
 
   it("redacts secrets and caps tool count", () => {
