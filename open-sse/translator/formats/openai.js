@@ -53,7 +53,15 @@ export function filterToOpenAIFormat(body, opts = {}) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
-      
+
+      // Flatten text-only arrays into a joined string (OpenAI-native content),
+      // but keep blocks that carry extra fields (cache_control etc.) as arrays.
+      const isTextOnly = filteredContent.every((b) => b?.type === OPENAI_BLOCK.TEXT);
+      const isPureText = filteredContent.every((b) => Object.keys(b || {}).length <= 2);
+      if (isTextOnly && isPureText) {
+        return { ...msg, content: filteredContent.map((b) => b.text || "").join("\n") };
+      }
+
       return { ...msg, content: filteredContent };
     }
     

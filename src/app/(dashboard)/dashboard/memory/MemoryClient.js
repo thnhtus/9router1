@@ -13,6 +13,7 @@ export default function MemoryClient() {
   const [ownerType, setOwnerType] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [type, setType] = useState("");
+  const [status, setStatus] = useState("");
   const [limit, setLimit] = useState(100);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -24,6 +25,7 @@ export default function MemoryClient() {
       if (ownerType) qs.set("ownerType", ownerType);
       if (ownerId) qs.set("ownerId", ownerId);
       if (type) qs.set("type", type);
+      if (status) qs.set("status", status);
       qs.set("limit", String(limit));
       const res = await fetch(`/api/memory?${qs}`);
       const data = await res.json();
@@ -34,7 +36,7 @@ export default function MemoryClient() {
     } finally {
       setLoading(false);
     }
-  }, [ownerType, ownerId, type, limit]);
+  }, [ownerType, ownerId, type, status, limit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,12 +48,12 @@ export default function MemoryClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
-  const [cfg, setCfg] = useState({ memoryEnabled: false, memoryEmbeddingModel: "" });
+  const [cfg, setCfg] = useState({ memoryEnabled: false, memoryEmbeddingModel: "", memoryEvalEnabled: false, memoryEvalModel: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings").then((r) => r.json()).then((s) => {
-      setCfg({ memoryEnabled: !!s.memoryEnabled, memoryEmbeddingModel: s.memoryEmbeddingModel || "" });
+      setCfg({ memoryEnabled: !!s.memoryEnabled, memoryEmbeddingModel: s.memoryEmbeddingModel || "", memoryEvalEnabled: !!s.memoryEvalEnabled, memoryEvalModel: s.memoryEvalModel || "" });
     }).catch(() => {});
   }, []);
 
@@ -67,6 +69,16 @@ export default function MemoryClient() {
       setError(e.message || "Save failed");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleReview = async (id, status) => {
+    try {
+      const res = await fetch(`/api/memory/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+      if (!res.ok) throw new Error("Review failed");
+      setMemories((prev) => prev.map((m) => (m.id === id ? { ...m, metadata: { ...m.metadata, status } } : m)));
+    } catch (e) {
+      setError(e.message || "Review failed");
     }
   };
 
@@ -98,6 +110,14 @@ export default function MemoryClient() {
             <label htmlFor="mem-embed-model" className="block text-xs mb-1">Embedding model (empty = auto)</label>
             <Input id="mem-embed-model" value={cfg.memoryEmbeddingModel} onChange={(e) => setCfg((c) => ({ ...c, memoryEmbeddingModel: e.target.value }))} placeholder="gemini/gemini-embedding-001" className="w-72" />
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={cfg.memoryEvalEnabled} disabled={saving} onChange={(e) => saveCfg({ memoryEvalEnabled: e.target.checked })} />
+            Auto-file session candidates (Jev evaluates each chat session)
+          </label>
+          <div>
+            <label htmlFor="mem-eval-model" className="block text-xs mb-1">Evaluator model (empty = typesafe/jev-latest)</label>
+            <Input id="mem-eval-model" value={cfg.memoryEvalModel} onChange={(e) => setCfg((c) => ({ ...c, memoryEvalModel: e.target.value }))} placeholder="typesafe/jev-latest" className="w-72" />
+          </div>
           <Button onClick={() => saveCfg({})} disabled={saving}>Save</Button>
         </div>
       </Card>
@@ -114,6 +134,13 @@ export default function MemoryClient() {
           <div>
             <label className="block text-xs mb-1">Owner id</label>
             <Input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="agent id / user id" className="w-48" />
+          </div>
+          <div>
+            <label className="block text-xs mb-1">Status</label>
+            <select className="border rounded px-2 py-1 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">all</option>
+              {["approved", "candidate", "rejected"].map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs mb-1">Type</label>
@@ -140,6 +167,7 @@ export default function MemoryClient() {
                 <th className="text-left p-2">Owner</th>
                 <th className="text-left p-2">Type</th>
                 <th className="text-left p-2">Content</th>
+                <th className="text-left p-2">Status</th>
                 <th className="text-left p-2">Confidence</th>
                 <th className="text-left p-2">Importance</th>
                 <th className="text-left p-2">Version</th>
@@ -148,11 +176,23 @@ export default function MemoryClient() {
               </tr>
             </thead>
             <tbody>
-              {memories.map((m) => (
-                <tr key={m.id} className="border-t">
+              {memories.map((m) => {
+                const status = m.metadata?.status ?? "approved";
+                return (
+                <tr key={m.id} className={`border-t ${status === "candidate" ? "bg-amber-500/5" : ""}`}>
                   <td className="p-2 whitespace-nowrap">{m.ownerType}:{m.ownerId}</td>
                   <td className="p-2"><Badge>{m.type}</Badge></td>
                   <td className="p-2 max-w-md truncate" title={m.content}>{m.content}</td>
+                  <td className="p-2 whitespace-nowrap">
+                    {status === "candidate" ? (
+                      <>
+                        <Button size="sm" className="mr-1" onClick={() => handleReview(m.id, "approved")}>Approve</Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleReview(m.id, "rejected")}>Reject</Button>
+                      </>
+                    ) : (
+                      <Badge>{status}</Badge>
+                    )}
+                  </td>
                   <td className="p-2">{Number(m.confidence).toFixed(2)}</td>
                   <td className="p-2">{Number(m.importance).toFixed(2)}</td>
                   <td className="p-2">{m.version}</td>
@@ -161,9 +201,10 @@ export default function MemoryClient() {
                     <Button size="sm" variant="destructive" onClick={() => handleDelete(m.id)}>Delete</Button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {memories.length === 0 && !loading && (
-                <tr><td colSpan={8} className="p-4 text-center text-muted-foreground">No memories</td></tr>
+                <tr><td colSpan={9} className="p-4 text-center text-muted-foreground">No memories</td></tr>
               )}
             </tbody>
           </table>

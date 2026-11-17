@@ -10,7 +10,7 @@ describe("Gemini 3.7 Flash Support & Config (#3286, #3281)", () => {
     expect(agIds).toContain("gemini-3.7-flash-high");
     expect(agIds).toContain("gemini-3.7-flash-medium");
     expect(agIds).toContain("gemini-3.7-flash-low");
-    expect(agIds).not.toContain("gemini-3.7-flash");
+    expect(agIds).toContain("gemini-3.7-flash");
   });
 
   it("registers gemini-3.7-flash in gemini provider registry", () => {

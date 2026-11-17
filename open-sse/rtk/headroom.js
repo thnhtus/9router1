@@ -128,6 +128,13 @@ function collectToolOutputText(body, format) {
   };
 
   if (format === FORMATS.OPENAI_RESPONSES && hasUnsafeResponsesInputForCompression(body)) {
+    // Custom/grammar-constrained Responses tools make tool-history compression
+    // unsafe (projected payloads could violate the grammar) → let the handler set
+    // the explicit skip diagnostic and return null.
+    const hasGrammarTool = (body.tools || []).some(
+      (t) => t?.type === "custom" || t?.format?.type === "grammar"
+    );
+    if (hasGrammarTool) return null;
     for (const item of body.input) {
       if (item?.type === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) visit(item, "output");
     }

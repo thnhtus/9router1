@@ -52,6 +52,10 @@ export function claudeToOpenAIRequest(model, body, stream) {
         if (Array.isArray(converted)) {
           result.messages.push(...converted);
         } else {
+          if (Array.isArray(converted.content)) {
+            const text = collapseTextParts(converted.content);
+            if (text !== undefined) converted.content = text;
+          }
           result.messages.push(converted);
         }
       }

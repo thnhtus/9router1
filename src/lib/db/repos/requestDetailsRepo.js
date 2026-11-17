@@ -15,19 +15,10 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
-    if (envRequestLogs !== undefined) {
-      const enabled = envRequestLogs.toLowerCase() === "true";
-      cachedConfig = {
-        enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-      };
-      cachedConfigTs = Date.now();
-      return cachedConfig;
-    }
+    // ENABLE_REQUEST_LOGS only governs the file logger (open-sse/utils/requestLogger.js).
+    // Using it here disabled this DB store whenever the documented default `false` was
+    // present in .env — the dashboard toggle then showed observability as on while
+    // nothing was recorded. OBSERVABILITY_ENABLED is the env switch for this store.
     const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
     const uiFlag = typeof settings.enableObservability === "boolean";
     const enabled = uiFlag
@@ -85,6 +76,47 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
+const INSERT_SQL = `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`;
+
+function buildRecord(item, config) {
+  if (!item.id) item.id = generateDetailId(item.model);
+  if (!item.timestamp) item.timestamp = new Date().toISOString();
+  if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+  return {
+    id: item.id,
+    provider: item.provider || null,
+    model: item.model || null,
+    connectionId: item.connectionId || null,
+    sessionId: item.sessionId || null,
+    timestamp: item.timestamp,
+    status: item.status || null,
+    latency: item.latency || {},
+    tokens: item.tokens || {},
+    request: truncateField(item.request, config.maxJsonSize),
+    providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+    providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+    response: truncateField(item.response, config.maxJsonSize),
+    pxpipe: item.pxpipe || undefined,
+    tokenSavers: item.tokenSavers || undefined,
+  };
+}
+
+function writeBatch(db, items, config) {
+  db.transaction(() => {
+    for (const item of items) {
+      const record = buildRecord(item, config);
+      db.run(INSERT_SQL, [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]);
+    }
+    const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+    if (cnt && cnt.c > config.maxRecords) {
+      db.run(
+        `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+        [cnt.c - config.maxRecords]
+      );
+    }
+  });
+}
+
 async function flushToDatabase() {
   if (isFlushing) return;
   if (writeBuffer.length === 0) return;
@@ -94,45 +126,7 @@ async function flushToDatabase() {
     while (writeBuffer.length > 0) {
       const items = writeBuffer.splice(0, writeBuffer.length);
       const db = await getAdapter();
-      const config = await getObservabilityConfig();
-
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
-            tokenSavers: item.tokenSavers || undefined,
-          };
-
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-          );
-        }
-
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
-        }
-      });
+      writeBatch(db, items, await getObservabilityConfig());
     }
   } catch (e) {
     console.error("[requestDetailsRepo] Batch write failed:", e);

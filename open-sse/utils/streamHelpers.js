@@ -23,7 +23,18 @@ export function parseSSELine(line, format = null) {
   }
 
   // Standard SSE format: "data: {...}"
-  if (line.charCodeAt(0) !== 100) return null; // 'd' = 100
+  if (line.charCodeAt(0) !== 100) {
+    // Fallback: raw NDJSON line (some providers stream without "data:" prefix)
+    const trimmed = line.trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
 
   const data = line.slice(5).trim();
   if (data === "[DONE]") return { done: true };

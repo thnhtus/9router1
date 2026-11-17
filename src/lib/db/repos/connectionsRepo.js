@@ -155,11 +155,21 @@ export async function createProviderConnection(data) {
       : all.length;
 
     let existing = null;
-    if (data.authType === "oauth" && data.email) {
+    // Claude issues no email on its OAuth token response, so an email-less
+    // re-login used to skip dedup entirely: the fresh row got MAX(priority)+1
+    // while the revoked row kept priority 1 and its modelLock_* keys, and
+    // fill-first picked the dead one forever ("re-authed but still 401").
+    // Match those rows on (provider + null email) too, but only while the
+    // provider has a single email-less row — with two of them the identity is
+    // genuinely ambiguous, so fall back to creating a separate connection.
+    const emailLessPool = data.authType === "oauth" && !data.email
+      ? all.filter(c => c.authType === "oauth" && !c.email)
+      : [];
+    if (data.authType === "oauth" && (data.email || emailLessPool.length === 1)) {
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
-        if (c.authType !== "oauth" || c.email !== data.email) return false;
+        if (c.authType !== "oauth" || (c.email || null) !== (data.email || null)) return false;
 
         // Codex/OpenAI can issue multiple OAuth grants for the same email.
         // Refresh tokens are rotated single-use; collapsing a new login onto an

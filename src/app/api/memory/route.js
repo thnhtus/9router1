@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listMemories, createMemory } from "@/lib/db/repos/agentMemoriesRepo.js";
+import { listMemories, createMemory, MEMORY_STATUSES } from "@/lib/db/repos/agentMemoriesRepo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,9 @@ export async function GET(request) {
     const ownerId = searchParams.get("ownerId") || undefined;
     const type = searchParams.get("type") || undefined;
     const limit = parseInt(searchParams.get("limit") || "100", 10);
-    const items = await listMemories({ ownerType, ownerId, type, limit });
+    // list defaults to every status so the dashboard can surface candidates
+    const status = searchParams.get("status") || "all";
+    const items = await listMemories({ ownerType, ownerId, type, limit, status });
     return NextResponse.json({ memories: items });
   } catch (error) {
     console.log("Error fetching memories:", error);
@@ -24,7 +26,11 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { ownerType, ownerId, type, content } = body || {};
+    const { ownerType, ownerId, type, content, metadata } = body || {};
+    const status = body?.status;
+    if (status !== undefined && !MEMORY_STATUSES.includes(status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
     if (!OWNER_TYPES.includes(ownerType)) {
       return NextResponse.json({ error: "Invalid ownerType" }, { status: 400 });
     }
@@ -37,7 +43,10 @@ export async function POST(request) {
     if (typeof ownerId !== "string" || ownerId.trim() === "") {
       return NextResponse.json({ error: "ownerId is required" }, { status: 400 });
     }
-    const mem = await createMemory({ ownerType, ownerId, type, content });
+    const mem = await createMemory({
+      ownerType, ownerId, type, content,
+      metadata: { ...(metadata && typeof metadata === "object" ? metadata : {}), ...(status ? { status } : {}) },
+    });
     return NextResponse.json(mem, { status: 201 });
   } catch (error) {
     console.log("Error creating memory:", error);

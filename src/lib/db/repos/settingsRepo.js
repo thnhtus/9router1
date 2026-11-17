@@ -66,6 +66,8 @@ const DEFAULT_SETTINGS = {
   pxpipeEnabled: false,
   memoryEnabled: false,
   memoryEmbeddingModel: "",
+  memoryEvalEnabled: false,
+  memoryEvalModel: "",
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,

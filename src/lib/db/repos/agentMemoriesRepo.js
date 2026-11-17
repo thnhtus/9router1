@@ -87,7 +87,21 @@ function rowToMemory(row) {
 
 // ---------- Public API ----------
 
-export async function listMemories({ ownerType, ownerId, type, limit = 100 } = {}) {
+// Review gate lives inside `metadata.status` so both the SQLite table and the
+// Supabase mirror stay schema-stable (no column migration needed). A memory
+// without an explicit status is treated as approved.
+export const MEMORY_STATUSES = ["candidate", "approved", "rejected"];
+export function memoryStatus(mem) {
+  const s = mem?.metadata?.status;
+  return MEMORY_STATUSES.includes(s) ? s : "approved";
+}
+function filterByStatus(items, status) {
+  if (!status || status === "all") return items;
+  if (!MEMORY_STATUSES.includes(status)) return items;
+  return items.filter((m) => memoryStatus(m) === status);
+}
+
+export async function listMemories({ ownerType, ownerId, type, limit = 100, status } = {}) {
   if (supabaseEnabled()) {
     const qs = new URLSearchParams();
     qs.set("select", "*");
@@ -99,7 +113,7 @@ export async function listMemories({ ownerType, ownerId, type, limit = 100 } = {
     const res = await fetch(`${baseUrl()}/rest/v1/agent_memories?${qs}`, { headers: headers() });
     if (!res.ok) throw new Error(`Supabase list failed: ${res.status} ${await res.text()}`);
     const rows = await res.json();
-    return rows.map(fromRow);
+    return filterByStatus(rows.map(fromRow), status);
   }
   const db = await getAdapter();
   const where = [];
@@ -109,7 +123,7 @@ export async function listMemories({ ownerType, ownerId, type, limit = 100 } = {
   if (type) { where.push("type = ?"); params.push(type); }
   const sql = `SELECT * FROM agentMemories ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY createdAt DESC LIMIT ?`;
   params.push(limit);
-  return db.all(sql, params).map(rowToMemory);
+  return filterByStatus(db.all(sql, params).map(rowToMemory), status);
 }
 
 export async function getMemoryById(id) {
@@ -132,7 +146,7 @@ export async function createMemory(data) {
       ownerId: data.ownerId,
       type: data.type,
       content: data.content,
-      metadata: data.metadata || {},
+      metadata: { status: "approved", ...data.metadata },
       embedding: data.embedding || null,
       confidence: data.confidence ?? 1.0,
       importance: data.importance ?? 0.5,
@@ -159,7 +173,7 @@ export async function createMemory(data) {
     ownerId: data.ownerId,
     type: data.type,
     content: data.content,
-    metadata: data.metadata || {},
+    metadata: { status: "approved", ...data.metadata },
     embedding: data.embedding || null,
     confidence: data.confidence ?? 1.0,
     importance: data.importance ?? 0.5,
@@ -233,7 +247,7 @@ export async function touchMemory(id) {
 export async function retrieveMemories({ ownerType, ownerId, queryEmbedding, topK = 8, type } = {}) {
   if (supabaseEnabled()) {
     if (!queryEmbedding) {
-      const rows = await listMemories({ ownerType, ownerId, type, limit: topK });
+      const rows = await listMemories({ ownerType, ownerId, type, limit: topK, status: "approved" });
       return rows;
     }
     const res = await fetch(`${baseUrl()}/rest/v1/rpc/match_agent_memories`, {
@@ -249,14 +263,14 @@ export async function retrieveMemories({ ownerType, ownerId, queryEmbedding, top
     if (!res.ok) {
       const txt = await res.text();
       console.warn("[memory] match rpc failed, falling back to recency:", res.status, txt);
-      return listMemories({ ownerType, ownerId, type, limit: topK });
+      return listMemories({ ownerType, ownerId, type, limit: topK, status: "approved" });
     }
     const rows = await res.json();
-    let items = rows.map(fromRow);
+    let items = rows.map(fromRow).filter((m) => memoryStatus(m) === "approved");
     if (type) items = items.filter((m) => m.type === type);
     return items.slice(0, topK);
   }
-  const all = await listMemories({ ownerType, ownerId, type, limit: 5000 });
+  const all = await listMemories({ ownerType, ownerId, type, limit: 5000, status: "approved" });
   if (!queryEmbedding) return all.slice(0, topK);
   const scored = all
     .filter((m) => Array.isArray(m.embedding) && m.embedding.length === queryEmbedding.length)

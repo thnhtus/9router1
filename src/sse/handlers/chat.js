@@ -36,6 +36,7 @@ import { consumeEscalationBudget } from "open-sse/services/systemoneRouter.js";
 import { retrieveMemories } from "@/lib/db/repos/agentMemoriesRepo.js";
 import { embedText } from "@/lib/memory/embed.js";
 import { runMemoryLifecycle } from "open-sse/services/memoryGraph.js";
+import { scheduleSessionEval } from "@/lib/memory/evaluate.js";
 
 // request -> memory block; computed once in handleChat, read by every handleSingleModelChat attempt.
 const memoryPrompts = new WeakMap();
@@ -460,6 +461,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       if (chatSettings.memoryEnabled && apiKey) {
         runMemoryLifecycle({ ownerType: "agent", ownerId: apiKey, query: lastUserText(body) }, apiKey)
           .catch((e) => log.warn("MEMORY", `capture skipped: ${e.message}`));
+      }
+      // Jev session auto-file: debounced per session, no-op unless memoryEvalEnabled.
+      if (chatSettings.memoryEvalEnabled) {
+        const sessionId = resolveSessionIdentity({ headers: clientRawRequest?.headers, body })?.sessionId;
+        if (sessionId) scheduleSessionEval(sessionId, { ownerType: "agent", ownerId: apiKey });
       }
       return result.response;
     }
