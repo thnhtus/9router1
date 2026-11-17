@@ -134,6 +134,13 @@ const getPageInfo = (pathname) => {
       icon: "lan",
       breadcrumbs: [],
     };
+  if (pathname.includes("/memory"))
+    return {
+      title: "Agent Memory",
+      description: "Sessions, candidates and reviewed knowledge",
+      icon: "memory",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/skills"))
     return {
       title: "Agent Skills",

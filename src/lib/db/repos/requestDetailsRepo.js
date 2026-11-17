@@ -211,6 +211,16 @@ export async function listHarnessSessions({ limit = 50 } = {}) {
   return [...bySession.values()].sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt))).map((s) => ({ ...s, providers: [...s.providers], models: [...s.models] }));
 }
 
+export async function getHarnessSessionDetail(sessionId, { limit = 50 } = {}) {
+  const db = await getAdapter();
+  // Filter in SQL-agnostic JS: the adapter may be sql.js, better-sqlite3, node:sqlite or D1.
+  const rows = db.all(`SELECT data FROM requestDetails WHERE provider LIKE 'harness:%' ORDER BY timestamp DESC LIMIT ?`, [Math.max(1, Math.min(500, limit))]);
+  return rows
+    .map((r) => parseJson(r.data, null))
+    .filter((d) => d && d.sessionId === sessionId)
+    .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+}
+
 export async function getDistinctProviders() {
   const db = await getAdapter();
   const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);
