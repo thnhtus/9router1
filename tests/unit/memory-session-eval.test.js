@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { yesProbability, groupSessions, redact } from "@/lib/memory/evaluate.js";
+import { yesProbability, groupSessions, redact, memoryOwnerIdFromKey, buildCandidateContent } from "@/lib/memory/evaluate.js";
 import { memoryStatus, MEMORY_STATUSES } from "@/lib/db/repos/agentMemoriesRepo.js";
 
 describe("memory session evaluation", () => {
@@ -28,5 +28,31 @@ describe("memory session evaluation", () => {
       { sessionId: "s1", provider: "b", model: "n", timestamp: "2026-01-01T00:00:01Z" },
     ]);
     expect(groups.length).toBe(1);
+  });
+
+  it("candidate content keeps scores, models and a redacted last answer", () => {
+    const req = (txt, ans) => ({
+      sessionId: "s9",
+      timestamp: "2026-01-01T00:00:00Z",
+      request: { messages: [{ role: "user", content: txt }] },
+      response: { content: ans },
+    });
+    const session = groupSessions([req("fix the migration", "ran Bearer abc.def then npm run migrate")])[0];
+    const out = buildCandidateContent(session, { mean: 0.8, taskSuccess: 0.9, reusable: 0.7, evidence: 0.8 });
+    expect(out).toContain("mean=0.8");
+    expect(out).toContain("fix the migration");
+    expect(out).toContain("npm run migrate");
+    expect(out).not.toContain("abc.def");
+    expect(out.length).toBeLessThanOrEqual(1800);
+  });
+
+  it("hashes api keys for memory owner id", () => {
+    const a = memoryOwnerIdFromKey("sk-secret-123");
+    const b = memoryOwnerIdFromKey("sk-secret-123");
+    const c = memoryOwnerIdFromKey("sk-secret-456");
+    expect(a).toMatch(/^key:[a-f0-9]{16}$/);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(a).not.toContain("sk-secret");
   });
 });

@@ -4,7 +4,7 @@
 - When the user says to turn off localhost/dev servers (e.g. "tắt toàn bộ localhost đi, để tôi chạy"), stop all local dev processes (next dev etc.) and leave them stopped so the user can run them themselves; don't leave dev servers running. Confidence: 0.5
 - Wants charts/data visualizations built with D3.js (https://d3js.org/). Confidence: 0.5
 - For node/edge graphs (e.g. agents/provider topology graphs), wants React Flow (https://reactflow.dev/) with `smoothstep` edge type. Confidence: 0.5
-- To analyze external UI reference pages (e.g. affectui.com components) before adapting them into the project, use the `rea` tool (e.g. `rea capture-browser-scenario`). Also uses `rea` to evaluate external GitHub repos (e.g. OmniRoute) and to gap-compare them against 9router1 for features worth porting. Confidence: 0.7
+- To analyze external UI reference pages (e.g. affectui.com components) before adapting them into the project, use the `rea` tool (e.g. `rea capture-browser-scenario`). Also uses external GitHub repos as gap-compare references against 9router1 (e.g. OmniRoute for features worth porting; agent-beacon 2026-11-17 for auditing which core concepts of a reference project are already implemented in 9router1). Confidence: 0.75
 - Wants DB/schema integration and migration work gated (validated) through the Supabase MCP. Confidence: 0.55
 - Prefers moving app state that fits a DB (file-based logs and state) into the DB, with migrations to import the existing data. Confidence: 0.35
 

@@ -170,6 +170,7 @@ import p173 from "./sparkdesk.js";
 import p174 from "./bytez.js";
 import p175 from "./aihubmix.js";
 import p176 from "./z-ai.js";
+import p177 from "./anyapi.js";
 export default [
   p0,
   p1,
@@ -340,4 +341,5 @@ export default [
   p174,
   p175,
   p176,
+  p177,
 ];

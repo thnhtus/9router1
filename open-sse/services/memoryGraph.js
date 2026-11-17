@@ -42,10 +42,12 @@ async function retrieveNode(state) {
 }
 
 export function extractFacts(text) {
-  // ponytail: sentence-start heuristic only; ceiling = misses implicit facts; upgrade = LLM extraction via 9Router combo.
+  // ponytail: explicit markers/starts only; ceiling = misses implicit lessons; upgrade = LLM extraction via 9Router combo.
   const t = String(text || "").trim();
+  if (!t) return [];
   const lower = t.toLowerCase();
-  return /^(remember|nhớ|always|never|luôn)(\s|$)/.test(lower) ? [t] : [];
+  const hit = /^(remember|nhớ|always|never|luôn|decision:|lesson:|preference:|constraint:|rule:|we decided|decided to|avoid\b|do not\b|don't\b|prefer\b)(\s|$)/.test(lower);
+  return hit ? [t.slice(0, 2000)] : [];
 }
 
 async function extractNode(state) {

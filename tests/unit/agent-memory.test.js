@@ -30,10 +30,12 @@ describe("memory API validation", () => {
 });
 
 describe("extractFacts heuristic", () => {
-  it("matches sentence-start triggers only", () => {
+  it("matches explicit triggers only", () => {
     expect(extractFacts("remember my favorite color is blue")).toEqual(["remember my favorite color is blue"]);
     expect(extractFacts("Nhớ hộ tôi địa chỉ này")).toHaveLength(1);
     expect(extractFacts("never store this")).toEqual(["never store this"]);
+    expect(extractFacts("decision: use key hash for memory owner")).toHaveLength(1);
+    expect(extractFacts("lesson: redact secrets before eval")).toHaveLength(1);
     // must NOT match trigger words mid-text (past junk: ACP status line matched "never guess them")
     expect(extractFacts("[ACP status: refs above it, never guess them]")).toEqual([]);
     expect(extractFacts("can you always answer in English?")).toEqual([]);

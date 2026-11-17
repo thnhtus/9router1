@@ -12,10 +12,16 @@ import { getRequestDetails } from "@/lib/db/repos/requestDetailsRepo.js";
 import { createMemory } from "@/lib/db/repos/agentMemoriesRepo.js";
 import { getApiKeys } from "@/lib/localDb.js";
 import { getSettings } from "@/lib/db/repos/settingsRepo.js";
+import { createHash } from "node:crypto";
 
 // Beacon gate: task_success >= 0.50 AND mean(3 questions) >= 0.60.
 const SUCCESS_GATE = 0.5;
 const MEAN_GATE = 0.6;
+
+export function memoryOwnerIdFromKey(apiKey) {
+  if (typeof apiKey !== "string" || !apiKey) return null;
+  return `key:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`;
+}
 
 // ponytail: per-process idle debounce (eval runs ~10min after a session's last
 // request); lost timers on restart just mean that session is evaluated later or never.
@@ -38,7 +44,6 @@ export function scheduleSessionEval(sessionId, { ownerType = "agent", ownerId } 
 
 // Reused as both the probe payload and the candidate record, so flip here only.
 const MAX_STATE_CHARS = 2000;
-const FIRST_USER_CHARS = 500;
 
 const REDACTORS = [
   /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
@@ -100,6 +105,22 @@ function buildState(session) {
     `Last assistant answer: ${truncate(redact(responseText(last)), 500)}`,
   ];
   return lines.join("\n").slice(0, MAX_STATE_CHARS);
+}
+
+export function buildCandidateContent(session, scores) {
+  const { first, last } = session;
+  const providers = [...session.providers].join(",") || "-";
+  const models = [...session.models].join(",") || "-";
+  const parts = [
+    `[candidate] Session ${session.sessionId} (${session.count} req, ${session.errors} err, mean=${scores?.mean ?? "?"}, task=${scores?.taskSuccess ?? "?"}, reusable=${scores?.reusable ?? "?"}, evidence=${scores?.evidence ?? "?"})`,
+    `Providers: ${providers} | Models: ${models}`,
+    `First user: ${truncate(redact(firstUser(first)), 350)}`,
+  ];
+  const lastU = truncate(redact(firstUser(last)), 250);
+  if (lastU && lastU !== truncate(redact(firstUser(first)), 250)) parts.push(`Last user: ${lastU}`);
+  const lastA = truncate(redact(responseText(last)), 500);
+  if (lastA) parts.push(`Last answer: ${lastA}`);
+  return parts.join("\n").slice(0, 1800);
 }
 
 export function yesProbability(answers, key) {
@@ -174,12 +195,13 @@ export async function evaluateSession({ sessionId, ownerType = "agent", ownerId,
   if (!force && settings?.memoryEvalEnabled !== true) {
     return { ...out, candidateCreated: false, skipped: "memoryEvalEnabled is false (enable it to let Jev file candidates)" };
   }
-  const owner = ownerId || (await firstActiveKeyId()) || "system";
+  const fallbackOwner = memoryOwnerIdFromKey(await firstActiveKeyId()) || "system";
+  const owner = memoryOwnerIdFromKey(ownerId) || ownerId || fallbackOwner;
   const mem = await createMemory({
     ownerType,
     ownerId: owner,
     type: "episodic",
-    content: `[candidate] Session ${sessionId} (${requests.length} requests): ${truncate(redact(firstUser(grouped.first)), FIRST_USER_CHARS)}`,
+    content: buildCandidateContent(grouped, out.scores),
     metadata: {
       status: "candidate",
       sessionId,

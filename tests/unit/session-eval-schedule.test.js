@@ -23,7 +23,10 @@ vi.mock("@/lib/disabledModelsDb", () => ({ getDisabledModels: async () => ({}) }
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => [] }));
 vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async () => null }));
 vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsage: vi.fn() }));
-vi.mock("@/lib/memory/evaluate.js", () => ({ scheduleSessionEval: mocks.scheduleSessionEval }));
+vi.mock("@/lib/memory/evaluate.js", () => ({
+  scheduleSessionEval: mocks.scheduleSessionEval,
+  memoryOwnerIdFromKey: (k) => (k ? `key:${String(k).slice(0, 4)}` : null),
+}));
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
   markAccountUnavailable: vi.fn(async () => ({ shouldFallback: false })),
@@ -62,7 +65,8 @@ describe("session eval scheduling in handleSingleModelChat", () => {
   it("succeeds and schedules the eval with the client session id", async () => {
     const res = await handleChat(post({ "x-session-id": SESSION }));
     expect(res.status).toBe(200);
-    expect(mocks.scheduleSessionEval).toHaveBeenCalledWith(SESSION, { ownerType: "agent", ownerId: "sk-test" });
+    // ownerId is the hashed key, never the raw api key
+    expect(mocks.scheduleSessionEval).toHaveBeenCalledWith(SESSION, { ownerType: "agent", ownerId: "key:sk-t" });
   });
 
   it("succeeds without any client session header (derived id, no throw)", async () => {
