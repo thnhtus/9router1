@@ -160,7 +160,7 @@ async function fileMemory({ ownerType, ownerId, grouped, out, scores, modelInfo,
   // Opt-in auto-approve: still a human gate, it only skips the queue for strong
   // sessions and leaves an audit trail; any auto-approved row can be Rejected later.
   const autoApprove = shouldAutoApprove({ enabled: settings?.memoryAutoApprove === true, taskSuccess, mean: out.scores.mean });
-  return createMemory({
+  const mem = await createMemory({
     ownerType,
     ownerId: owner,
     type: "episodic",
@@ -180,6 +180,7 @@ async function fileMemory({ ownerType, ownerId, grouped, out, scores, modelInfo,
     },
     importance: 0.6,
   });
+  return { mem, autoApproved: autoApprove };
 }
 
 export async function evaluateSession({ sessionId, ownerType = "agent", ownerId, model, dryRun = false, force = false } = {}) {
@@ -233,8 +234,8 @@ export async function evaluateSession({ sessionId, ownerType = "agent", ownerId,
   if (!force && settings?.memoryEvalEnabled !== true) {
     return { ...out, candidateCreated: false, skipped: "memoryEvalEnabled is false (enable it to let Jev file candidates)" };
   }
-  const mem = await fileMemory({ ownerType, ownerId, grouped, out, scores: { taskSuccess, reusable, evidence }, modelInfo, settings });
-  return { ...out, candidateCreated: true, autoApproved: autoApprove, memory: mem };
+  const { mem, autoApproved } = await fileMemory({ ownerType, ownerId, grouped, out, scores: { taskSuccess, reusable, evidence }, modelInfo, settings });
+  return { ...out, candidateCreated: true, autoApproved, memory: mem };
 }
 
 async function firstActiveKeyId() {
