@@ -151,6 +151,37 @@ export async function loadSessionRequests(sessionId, limit = 400) {
   return all.slice(0, limit);
 }
 
+// Writes the candidate (or auto-approved) memory row. Separate from evaluateSession so
+// the scoring path stays readable; behaviour is unchanged.
+async function fileMemory({ ownerType, ownerId, grouped, out, scores, modelInfo, settings }) {
+  const { taskSuccess, reusable, evidence } = scores;
+  const fallbackOwner = memoryOwnerIdFromKey(await firstActiveKeyId()) || "system";
+  const owner = memoryOwnerIdFromKey(ownerId) || ownerId || fallbackOwner;
+  // Opt-in auto-approve: still a human gate, it only skips the queue for strong
+  // sessions and leaves an audit trail; any auto-approved row can be Rejected later.
+  const autoApprove = shouldAutoApprove({ enabled: settings?.memoryAutoApprove === true, taskSuccess, mean: out.scores.mean });
+  return createMemory({
+    ownerType,
+    ownerId: owner,
+    type: "episodic",
+    content: buildCandidateContent(grouped, out.scores),
+    metadata: {
+      status: autoApprove ? "approved" : "candidate",
+      autoApproved: autoApprove || undefined,
+      autoApproveReason: autoApprove ? `Jev task=${taskSuccess} mean=${out.scores.mean} (gates ${AUTO_APPROVE_TASK}/${AUTO_APPROVE_MEAN})` : undefined,
+      sessionId: out.sessionId,
+      taskSuccess,
+      reusable,
+      evidence,
+      mean: out.scores.mean,
+      providers: [...grouped.providers],
+      models: [...grouped.models],
+      evaluator: `${modelInfo.provider}/${modelInfo.model}`,
+    },
+    importance: 0.6,
+  });
+}
+
 export async function evaluateSession({ sessionId, ownerType = "agent", ownerId, model, dryRun = false, force = false } = {}) {
   if (!sessionId || typeof sessionId !== "string") return { error: "sessionId is required" };
   const requests = await loadSessionRequests(sessionId);
@@ -202,31 +233,7 @@ export async function evaluateSession({ sessionId, ownerType = "agent", ownerId,
   if (!force && settings?.memoryEvalEnabled !== true) {
     return { ...out, candidateCreated: false, skipped: "memoryEvalEnabled is false (enable it to let Jev file candidates)" };
   }
-  const fallbackOwner = memoryOwnerIdFromKey(await firstActiveKeyId()) || "system";
-  const owner = memoryOwnerIdFromKey(ownerId) || ownerId || fallbackOwner;
-  // Opt-in auto-approve: still a human gate, it only skips the queue for strong
-  // sessions and leaves an audit trail; any auto-approved row can be Rejected later.
-  const autoApprove = shouldAutoApprove({ enabled: settings?.memoryAutoApprove === true, taskSuccess, mean: out.scores.mean });
-  const mem = await createMemory({
-    ownerType,
-    ownerId: owner,
-    type: "episodic",
-    content: buildCandidateContent(grouped, out.scores),
-    metadata: {
-      status: autoApprove ? "approved" : "candidate",
-      autoApproved: autoApprove || undefined,
-      autoApproveReason: autoApprove ? `Jev task=${taskSuccess} mean=${out.scores.mean} (gates ${AUTO_APPROVE_TASK}/${AUTO_APPROVE_MEAN})` : undefined,
-      sessionId,
-      taskSuccess,
-      reusable,
-      evidence,
-      mean: out.scores.mean,
-      providers: [...grouped.providers],
-      models: [...grouped.models],
-      evaluator: `${modelInfo.provider}/${modelInfo.model}`,
-    },
-    importance: 0.6,
-  });
+  const mem = await fileMemory({ ownerType, ownerId, grouped, out, scores: { taskSuccess, reusable, evidence }, modelInfo, settings });
   return { ...out, candidateCreated: true, autoApproved: autoApprove, memory: mem };
 }
 
