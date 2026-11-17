@@ -17,6 +17,13 @@ import { createHash } from "node:crypto";
 // Beacon gate: task_success >= 0.50 AND mean(3 questions) >= 0.60.
 const SUCCESS_GATE = 0.5;
 const MEAN_GATE = 0.6;
+// Auto-approve (opt-in) skips the human queue only for clearly strong sessions.
+const AUTO_APPROVE_TASK = 0.9;
+const AUTO_APPROVE_MEAN = 0.85;
+
+export function shouldAutoApprove({ enabled, taskSuccess, mean }) {
+  return enabled === true && typeof taskSuccess === "number" && taskSuccess >= AUTO_APPROVE_TASK && mean >= AUTO_APPROVE_MEAN;
+}
 
 export function memoryOwnerIdFromKey(apiKey) {
   if (typeof apiKey !== "string" || !apiKey) return null;
@@ -197,13 +204,18 @@ export async function evaluateSession({ sessionId, ownerType = "agent", ownerId,
   }
   const fallbackOwner = memoryOwnerIdFromKey(await firstActiveKeyId()) || "system";
   const owner = memoryOwnerIdFromKey(ownerId) || ownerId || fallbackOwner;
+  // Opt-in auto-approve: still a human gate, it only skips the queue for strong
+  // sessions and leaves an audit trail; any auto-approved row can be Rejected later.
+  const autoApprove = shouldAutoApprove({ enabled: settings?.memoryAutoApprove === true, taskSuccess, mean: out.scores.mean });
   const mem = await createMemory({
     ownerType,
     ownerId: owner,
     type: "episodic",
     content: buildCandidateContent(grouped, out.scores),
     metadata: {
-      status: "candidate",
+      status: autoApprove ? "approved" : "candidate",
+      autoApproved: autoApprove || undefined,
+      autoApproveReason: autoApprove ? `Jev task=${taskSuccess} mean=${out.scores.mean} (gates ${AUTO_APPROVE_TASK}/${AUTO_APPROVE_MEAN})` : undefined,
       sessionId,
       taskSuccess,
       reusable,
@@ -215,7 +227,7 @@ export async function evaluateSession({ sessionId, ownerType = "agent", ownerId,
     },
     importance: 0.6,
   });
-  return { ...out, candidateCreated: true, memory: mem };
+  return { ...out, candidateCreated: true, autoApproved: autoApprove, memory: mem };
 }
 
 async function firstActiveKeyId() {

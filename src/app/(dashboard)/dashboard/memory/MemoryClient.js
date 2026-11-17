@@ -90,12 +90,12 @@ export default function MemoryClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
-  const [cfg, setCfg] = useState({ memoryEnabled: false, memoryEmbeddingModel: "", memoryEvalEnabled: false, memoryEvalModel: "" });
+  const [cfg, setCfg] = useState({ memoryEnabled: false, memoryEmbeddingModel: "", memoryEvalEnabled: false, memoryEvalModel: "", memoryAutoApprove: false });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings").then((r) => r.json()).then((s) => {
-      setCfg({ memoryEnabled: !!s.memoryEnabled, memoryEmbeddingModel: s.memoryEmbeddingModel || "", memoryEvalEnabled: !!s.memoryEvalEnabled, memoryEvalModel: s.memoryEvalModel || "" });
+      setCfg({ memoryEnabled: !!s.memoryEnabled, memoryEmbeddingModel: s.memoryEmbeddingModel || "", memoryEvalEnabled: !!s.memoryEvalEnabled, memoryEvalModel: s.memoryEvalModel || "", memoryAutoApprove: !!s.memoryAutoApprove });
     }).catch(() => {});
   }, []);
 
@@ -201,6 +201,7 @@ export default function MemoryClient() {
           <Toggle label="Enable memory" description="Inject recalled memories and capture after each chat" checked={cfg.memoryEnabled} disabled={saving} onChange={(v) => saveCfg({ memoryEnabled: v })} />
           <Input label="Embedding model" hint="Empty = auto" value={cfg.memoryEmbeddingModel} onChange={(e) => setCfg((c) => ({ ...c, memoryEmbeddingModel: e.target.value }))} placeholder="gemini/gemini-embedding-001" />
           <Toggle label="Auto-file session candidates" description="Jev scores every session and files candidates for review" checked={cfg.memoryEvalEnabled} disabled={saving} onChange={(v) => saveCfg({ memoryEvalEnabled: v })} />
+          <Toggle label="Auto-approve strong sessions" description="Jev task ≥ 0.90 and mean ≥ 0.85 skip review; everything else stays a candidate. Auto-approved rows can still be rejected." checked={cfg.memoryAutoApprove} disabled={saving || !cfg.memoryEvalEnabled} onChange={(v) => saveCfg({ memoryAutoApprove: v })} />
           <Input label="Evaluator model" hint="Empty = typesafe/jev-latest" value={cfg.memoryEvalModel} onChange={(e) => setCfg((c) => ({ ...c, memoryEvalModel: e.target.value }))} placeholder="typesafe/jev-latest" />
         </div>
       </Card>
@@ -367,7 +368,10 @@ export default function MemoryClient() {
                           <Button size="sm" variant="outline" onClick={() => handleReview(m.id, "rejected")}>Reject</Button>
                         </div>
                       ) : (
-                        <Badge size="sm" variant={STATUS_TONE[status] || "default"} dot>{status}</Badge>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Badge size="sm" variant={STATUS_TONE[status] || "default"} dot>{status}</Badge>
+                          {m.metadata?.autoApproved && status === "approved" && <Badge size="sm" variant="info" title={m.metadata.autoApproveReason}>auto</Badge>}
+                        </span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-right align-top tabular-nums text-muted-foreground" title="Confidence · Importance · Version">
@@ -459,6 +463,7 @@ export default function MemoryClient() {
               {memDetail.metadata?.taskSuccess !== undefined && (<><dt className="text-muted-foreground">Scores</dt><dd className="tabular-nums">task {Number(memDetail.metadata.taskSuccess).toFixed(2)} · reusable {Number(memDetail.metadata.reusable).toFixed(2)} · evidence {Number(memDetail.metadata.evidence).toFixed(2)}{memDetail.metadata.mean !== undefined ? ` · mean ${Number(memDetail.metadata.mean).toFixed(2)}` : ""}</dd></>)}
               {memDetail.metadata?.providers?.length > 0 && (<><dt className="text-muted-foreground">Providers</dt><dd>{memDetail.metadata.providers.join(", ")}</dd></>)}
               {memDetail.metadata?.models?.length > 0 && (<><dt className="text-muted-foreground">Models</dt><dd>{memDetail.metadata.models.join(", ")}</dd></>)}
+              {memDetail.metadata?.autoApproved && (<><dt className="text-muted-foreground">Approval</dt><dd>Auto-approved by Jev — {memDetail.metadata.autoApproveReason}</dd></>)}
               {memDetail.metadata?.evaluator && (<><dt className="text-muted-foreground">Evaluator</dt><dd>{memDetail.metadata.evaluator}</dd></>)}
               <dt className="text-muted-foreground">Created</dt><dd title={new Date(memDetail.createdAt).toLocaleString()}>{timeAgo(memDetail.createdAt)}</dd>
               <dt className="text-muted-foreground">Updated</dt><dd title={new Date(memDetail.updatedAt).toLocaleString()}>{memDetail.updatedAt ? timeAgo(memDetail.updatedAt) : "—"}</dd>
