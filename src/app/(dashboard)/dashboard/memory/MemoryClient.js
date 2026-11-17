@@ -437,7 +437,7 @@ export default function MemoryClient() {
         )}
       </Modal>
 
-      <Modal isOpen={!!memDetail} onClose={() => setMemDetail(null)} title="Memory detail" size="lg">
+      <Modal isOpen={!!memDetail} onClose={() => setMemDetail(null)} title="Memory detail" className="sm:max-w-5xl">
         {memDetail?.loading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {memDetail?.error && <p role="alert" className="text-sm text-red-500">{memDetail.error}</p>}
         {!memDetail?.loading && !memDetail?.error && memDetail && (
