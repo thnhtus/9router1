@@ -245,7 +245,7 @@ export async function getActiveRequests() {
       const isFailed = typeof e.status === "string" && /fail/i.test(e.status);
       if (!isFailed && e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${e.status}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -406,9 +406,10 @@ export async function getUsageStats(period = "all") {
       };
     })
     .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
+      const isFailed = typeof e.status === "string" && /fail|error/i.test(e.status);
+      if (!isFailed && e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${e.status}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

@@ -66,7 +66,7 @@ function RecentRequests({ requests = [] }) {
                 return (
                   <tr key={i} className="hover:bg-muted/40">
                     <td className="py-1.5">
-                      <span title={ok ? "OK" : "Failed"} className={`block size-1.5 rounded-full ${ok ? "bg-success" : "bg-danger"}`} />
+                      <span title={ok ? "OK" : r.status} className={`block size-1.5 rounded-full ${ok ? "bg-success" : "bg-danger"}`} />
                     </td>
                     <td className="max-w-[160px] py-1.5" title={r.seat ? `${r.model} · ${r.seat}` : r.model}>
                       <div className="truncate font-mono">{r.model}</div>
