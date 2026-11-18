@@ -15,7 +15,8 @@ let catalogCache = null; // { version, skills: [{ name, description, path, categ
 // Coarse buckets for the dashboard (skills carry no category metadata, so this is
 // prefix + keyword matching on the name, falling back to the description).
 const CATEGORY_RULES = [
-  [/^(cloudflare|cf-cli|turnstile|wrangler|workers|durable-objects|sandbox|basin|k2|gateway-workers|agents-sdk|nextjs-on-cloudflare)/, "Cloudflare"],
+  [/^(turnstile|gateway-workers|cloudflare-one|basin|k2|agents-sdk|durable-objects)/, "CF Security & Data"],
+  [/^(cf-cli|wrangler|cloudflare|cloudflare-email-service|sandbox|nextjs-on-cloudflare|workers)/, "CF Apps & SDK"],
   [/^(impeccable|design-taste|shadcn|vercel-brand|ui-overhaul|forma|antislop|humanizer|framer)/, "Design & UI"],
   [/^(founder-|clickup)/, "Business"],
   [/^(pre-qc|qc-test|web-perf)/, "QA & Perf"],
@@ -24,7 +25,9 @@ const CATEGORY_RULES = [
   [/^(openrig|rigs|refocusing|council-mode|ponytail|pi-)/, "Agent workflow"],
 ];
 const CATEGORY_KEYWORDS = [
-  [/cloudflare|worker|wrangler|d1\b|r2\b|turnstile/i, "Cloudflare"],
+  [/zero trust|\bsase\b|\bvpn\b|\bswgs\b|cloudflare one|\bwan\b|\brouting\b|dns|\bdpi\b|turnstile|\bbot\b/i, "CF Security & Data"],
+  [/basin|\biceberg\b|\br2\b|\bstream\b|durable object|\bdo\b|k2|\bagent\b|sdk/i, "CF Security & Data"],
+  [/cloudflare|\bwrangler\b|\bworker\b|\bhttp\b|\bapi\b|sandbox/i, "CF Apps & SDK"],
   [/core web vitals?|\blcp\b|\bfcp\b|\bcls\b|\binp\b|lighthouse|page (speed|perf)|loading performance/i, "QA & Perf"],
   [/\bqa\b|test ?case|regression|sprint review|accessibility audit/i, "QA & Perf"],
   [/\bdesign\b|\bui\b|typography|landing page|visual design/i, "Design & UI"],
@@ -36,6 +39,34 @@ export function skillCategory(name = "", description = "") {
   const n = name.toLowerCase();
   for (const [re, cat] of CATEGORY_RULES) if (re.test(n)) return cat;
   for (const [re, cat] of CATEGORY_KEYWORDS) if (re.test(description)) return cat;
+  return "Other";
+}
+
+// MCP server buckets, matched on the server name plus the target's host / command
+// basename (not the full URL, so query ids can't trigger false hits). First match wins.
+// ponytail: hand-kept table; add a rule when a new server lands in "Other".
+const MCP_RULES = [
+  [/\b(clickup|linear|asana|notion|trello|jira)\b/, "Project Mgmt"],
+  [/\b(gitlab|github|bitbucket)\b/, "Code & Repo"],
+  [/\b(supabase|postgres|mysql|sqlite|mongodb|redis|neon)\b/, "Data & DB"],
+  [/\b(figma|figcraft|open-design|open design|framer|penpot|blender)\b/, "Design & 3D"],
+  [/\b(cloudflare|vercel|netlify|aws|gcp|azure|fly)\b/, "Cloud & Deploy"],
+  [/\b(postman|swagger|openapi)\b/, "API & SDK"],
+  [/\b(firecrawl|tinyfish|exa|jina|reach|brave|tavily)\b/, "Web & Research"],
+  [/\b(chrome-devtools|playwright|puppeteer|browser)\b/, "Browser"],
+];
+
+const mcpTargetId = (target = "") => {
+  try {
+    return new URL(target).hostname;
+  } catch {
+    return target.split(/\s+/).slice(0, 4).map((t) => t.split("/").pop()).join(" ");
+  }
+};
+
+export function mcpCategory(name = "", target = "") {
+  const id = `${name} ${mcpTargetId(target)}`.toLowerCase();
+  for (const [re, cat] of MCP_RULES) if (re.test(id)) return cat;
   return "Other";
 }
 

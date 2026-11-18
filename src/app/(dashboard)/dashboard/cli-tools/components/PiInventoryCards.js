@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Modal, Input, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import SkillPickStats from "./SkillPickStats";
+import McpStats from "./McpStats";
 
 const SKILL_DOT = {
   ok: "bg-green-500",
@@ -254,6 +255,7 @@ export default function PiInventoryCards() {
         </div>
       </Card>
       <SkillPickStats />
+      {mcpServers.length > 0 && <McpStats servers={mcpServers} />}
       <Card
         padding="none"
         title="Pi MCP servers"
@@ -273,6 +275,7 @@ export default function PiInventoryCards() {
               <thead className="sticky top-0 z-10 bg-card">
                 <tr>
                   <th className={TH}>Server</th>
+                  <th className={TH}>Category</th>
                   <th className={TH}>Transport</th>
                   <th className={TH}>State</th>
                   <th className={`${TH} text-right`}>Tools</th>
@@ -294,6 +297,9 @@ export default function PiInventoryCards() {
                         />
                         {s.name}
                       </span>
+                    </td>
+                    <td className={`${TD} whitespace-nowrap`}>
+                      <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-white/10">{s.category || "Other"}</span>
                     </td>
                     <td className={TD}>
                       <span className="rounded bg-black/5 px-1 text-[10px] uppercase text-muted-foreground dark:bg-white/10">

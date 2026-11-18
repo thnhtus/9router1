@@ -9,7 +9,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { scoreSkill } from "@/shared/utils/skillScore";
 import { findDuplicateSkills } from "@/shared/utils/skillDuplicates";
-import { skillCategory } from "@/lib/piSkills.js";
+import { skillCategory, mcpCategory } from "@/lib/piSkills.js";
 
 const execAsync = promisify(exec);
 
@@ -162,6 +162,7 @@ const summarizeServers = async (servers) => {
       }
       return {
         name,
+        category: mcpCategory(name, cfg?.url || [cfg?.command, ...(Array.isArray(cfg?.args) ? cfg.args : [])].filter(Boolean).join(" ")),
         transport: cfg?.type || (isHttp ? "http" : "stdio"),
         target: cfg?.url || [cfg?.command, ...(Array.isArray(cfg?.args) ? cfg.args : [])].filter(Boolean).join(" "),
         state,
