@@ -3,6 +3,7 @@ import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { createHash } from "node:crypto";
 import { getRoutingProfiles, getModelTiers, readCatalog, pickByLevel } from "@/lib/llmStats.js";
+import { getSkillCatalog, buildSkillPrompt, setSkillPrompt, hasClientSkillCatalog } from "@/lib/piSkills.js";
 import { appendJevLog, countJevSkip, recordBreakerEvent, loadOpenBreaker } from "@/lib/jevLogs.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import { getComboFairness, hydrateComboFairness, FAIR_ERR_TURNS } from "open-sse/services/combo.js";
@@ -17,6 +18,7 @@ import {
 
 // Jev question instructions; also shown read-only on the Jev Router page.
 export const JEV_PROMPTS = {
+  skill: "Pick the ONE most relevant skill for the task from the criteria below, or \"none\" if no skill clearly fits.",
   route: "Pick the best fitting model whose role and scores match the task complexity. Use the cheapest tier that fits the level: for L1-L2 prefer free or cheap models (any provider); reserve premium/paid models (Claude, GPT) for L3-L4 or when no cheaper model fits. When several models fit equally, spread picks across providers instead of repeating the same one. Compare models from every provider on equal terms (Claude, GPT, Gemini, GLM, DeepSeek, Mistral, Grok, free/open models); do not favor one provider family by default. A model with missing profile fields is not disqualified; judge it on the info given and its fit for the level. Score the task on 4 levels: L1 trivial lookup/formatting, L2 single-file edit or simple answer, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. If the task needs exact precision (code that must compile, money, legal text, writes to data), raise the level one step. Avoid models marked unreliable or failed recently.",
   level: "Task level: L1 trivial lookup/formatting/chit-chat, L2 simple answer or single-file edit, L3 multi-file feature or debugging, L4 architecture/migration/irreversible change. Raise one step if exact precision is needed (code that must compile, money, legal text, data writes, strict output schema).",
 };
@@ -69,8 +71,18 @@ export function recentFailures(comboName) {
   return out;
 }
 
-function cacheKey(body, models) {
-  return createHash("sha256").update(JSON.stringify([extractPromptState(body), models])).digest("hex");
+function cacheKey(body, models, skillOn) {
+  return createHash("sha256").update(JSON.stringify([extractPromptState(body), models, skillOn])).digest("hex");
+}
+
+// Injects the Jev-picked skill into the request; runs on cache hits too so the skill survives TTL reuse.
+// Only a skill name from the live catalog is loaded; anything else is ignored.
+async function applySkill(opts, route) {
+  if (!opts?.skillAutoInject || !opts.request || !route?.skill) return;
+  const { skills } = await getSkillCatalog();
+  if (!skills.some((s) => s.name === route.skill)) return;
+  const prompt = await buildSkillPrompt([route.skill], { maxChars: opts.skillMaxChars || 8000 });
+  if (prompt) setSkillPrompt(opts.request, prompt);
 }
 
 /**
@@ -97,9 +109,12 @@ export function isTrivialPrompt(state) {
 
 export async function resolveSmartChoice(opts) {
   if (!Array.isArray(opts?.models) || opts.models.length <= 1) return null;
-  const key = cacheKey(opts.body, opts.models);
+  const key = cacheKey(opts.body, opts.models, !!opts.skillAutoInject);
   const hit = routeCache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.route;
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    await applySkill(opts, hit.route);
+    return hit.route;
+  }
 
   await breakerReady();
   if (Date.now() < breaker.openUntil) { // open: no call, no log row — just count the skip
@@ -133,6 +148,7 @@ export async function resolveSmartChoice(opts) {
       if (formulaPeers) Object.assign(route, { choice: trace.formulaPick, peers: formulaPeers });
       if (routeCache.size >= CACHE_MAX) routeCache.delete(routeCache.keys().next().value);
       routeCache.set(key, { route, at: Date.now() });
+      await applySkill(opts, route);
     }
     return route;
   } finally {
@@ -149,6 +165,8 @@ async function evaluate({
   log,
   timeoutMs = DEFAULT_SYSTEMONE_TIMEOUT_MS,
   comboName = null,
+  request = null,
+  skillAutoInject = false,
 }, trace) {
   const targetModel = (typeof routerModel === "string" && routerModel.trim())
     ? routerModel.trim()
@@ -196,22 +214,37 @@ async function evaluate({
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const questions = {
+      route: {
+        type: "choice",
+        instructions: JEV_PROMPTS.route,
+        criteria,
+      },
+      // Same call, no extra round trip: the level gates lossy token savers (chatCore).
+      level: {
+        type: "choice",
+        instructions: JEV_PROMPTS.level,
+        criteria: { L1: null, L2: null, L3: null, L4: null },
+      },
+    };
+
+    // Option 4: Jev also picks the skill in the same call (no extra round trip).
+    // Skipped when the client already ships its own <available_skills> catalog.
+    if (skillAutoInject && request && !hasClientSkillCatalog(body)) {
+      const { skills } = await getSkillCatalog();
+      if (skills.length) {
+        // Choice questions need `criteria` (keys are the allowed answers). Cap
+        // the catalog so the payload stays small; `none` is always offered.
+        const skillCriteria = { none: "no skill is relevant" };
+        for (const s of skills.slice(0, 50)) skillCriteria[s.name] = s.description || null;
+        questions.skill = { type: "choice", instructions: JEV_PROMPTS.skill, criteria: skillCriteria };
+      }
+    }
+
     const systemoneBody = trace.request = {
       model,
       state,
-      questions: {
-        route: {
-          type: "choice",
-          instructions: JEV_PROMPTS.route,
-          criteria,
-        },
-        // Same call, no extra round trip: the level gates lossy token savers (chatCore).
-        level: {
-          type: "choice",
-          instructions: JEV_PROMPTS.level,
-          criteria: { L1: null, L2: null, L3: null, L4: null },
-        },
-      },
+      questions,
     };
 
     // timeoutMs aborts the fetch itself, so a hung router never leaves a socket open.
@@ -233,6 +266,10 @@ async function evaluate({
 
     const json = trace.response = await result.response.json();
     const route = parseSystemOneRouteAnswer(json);
+    if (route && questions.skill) {
+      const name = typeof json.answers?.skill?.choice === "string" ? json.answers.skill.choice.trim() : "";
+      if (name && name !== "none") route.skill = name;
+    }
     if (!route || !route.choice) {
       log?.warn?.("COMBO", "smart-router: response missing valid route choice");
       trace.error = "smart-router: response missing valid route choice";

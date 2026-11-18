@@ -47,6 +47,7 @@ export default function TokenSaverClient() {
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+  const [skillAutoInject, setSkillAutoInject] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -365,6 +366,11 @@ export default function TokenSaverClient() {
     patchSetting({ customPrompt });
   };
 
+  const handleSkillAutoInject = (value) => {
+    setSkillAutoInject(value);
+    patchSetting({ skillAutoInject: value });
+  };
+
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
     try {
@@ -443,6 +449,7 @@ export default function TokenSaverClient() {
           setPonytailLevel(data.ponytailLevel || "full");
           setCustomPromptEnabled(!!data.customPromptEnabled);
           setCustomPrompt(data.customPrompt || "");
+          setSkillAutoInject(!!data.skillAutoInject);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -785,6 +792,18 @@ export default function TokenSaverClient() {
             </p>
           </div>
         )}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Auto-inject Pi skills</p>
+            <p className="text-sm text-muted-foreground">
+              Picks the most relevant local skill per request (Jev picks it in smart combos) and appends its SKILL.md. Skipped when the client already sends its own skill catalog.
+            </p>
+          </div>
+          <Toggle
+            checked={skillAutoInject}
+            onChange={() => handleSkillAutoInject(!skillAutoInject)}
+          />
+        </div>
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">

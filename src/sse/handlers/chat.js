@@ -37,6 +37,15 @@ import { retrieveMemories } from "@/lib/db/repos/agentMemoriesRepo.js";
 import { embedText } from "@/lib/memory/embed.js";
 import { runMemoryLifecycle } from "open-sse/services/memoryGraph.js";
 import { scheduleSessionEval, memoryOwnerIdFromKey } from "@/lib/memory/evaluate.js";
+import {
+  hasClientSkillCatalog,
+  pickSkillsLLM,
+  pickSkillsEmbedding,
+  buildSkillPrompt,
+  setSkillPrompt,
+  getSkillPrompt,
+  hasSkillPrompt,
+} from "@/lib/piSkills.js";
 
 // request -> memory block; computed once in handleChat, read by every handleSingleModelChat attempt.
 const memoryPrompts = new WeakMap();
@@ -105,6 +114,8 @@ async function handleChatInner(request, clientRawRequest = null) {
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
+  // Skill-picker self-call: never inject memory/skills into the picker's own request.
+  const isSkillPickRequest = request.headers.get("x-9r-skill-pick") === "1";
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
@@ -144,7 +155,7 @@ async function handleChatInner(request, clientRawRequest = null) {
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
   // Agent memory: off by default; any failure leaves the request untouched.
-  if (settings.memoryEnabled && apiKey) {
+  if (!isSkillPickRequest && settings.memoryEnabled && apiKey) {
     try {
       const mem = await buildMemoryPrompt(body, apiKey);
       if (mem) memoryPrompts.set(request, mem);
@@ -157,6 +168,34 @@ async function handleChatInner(request, clientRawRequest = null) {
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
+  const effectiveComboStrategy = comboModels
+    ? (settings.comboStrategies?.[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback")
+    : null;
+
+  // Auto skill injection (option 2): for direct targets and non-smart combos.
+  // Smart combos let the Jev call pick the skill (option 4) instead.
+  if (!isSkillPickRequest && settings.skillAutoInject && apiKey && !hasClientSkillCatalog(body)) {
+    const comboStrategy = comboModels ? effectiveComboStrategy : null;
+    const smartCombo = comboModels && comboStrategy === "smart";
+    if (!smartCombo) {
+      try {
+        const query = lastUserText(body).slice(0, 2000);
+        if (query) {
+          const topK = Number(settings.skillMaxSkills) || 2;
+          const pick = settings.skillPickMode === "embedding"
+            ? await pickSkillsEmbedding(query, { topK, threshold: Number(settings.skillMinConfidence) || 0.3 })
+            : await pickSkillsLLM({ query, request, apiKey, topK });
+          if (pick.names.length) {
+            const prompt = await buildSkillPrompt(pick.names, { maxChars: Number(settings.skillMaxChars) || 8000 });
+            if (prompt) setSkillPrompt(request, prompt);
+          }
+        }
+      } catch (e) {
+        log.warn("SKILL", `auto-inject skipped: ${e.message}`);
+      }
+    }
+  }
+
   if (comboModels) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
@@ -233,6 +272,9 @@ async function handleChatInner(request, clientRawRequest = null) {
             routerModel: comboCfg.routerModel,
             comboName: modelStr,
             log,
+            request,
+            skillAutoInject: !!settings.skillAutoInject,
+            skillMaxChars: Number(settings.skillMaxChars) || 8000,
           })
         : null,
     });
@@ -339,6 +381,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               routerModel: comboCfg.routerModel,
               comboName: modelStr,
               log,
+              request,
+              skillAutoInject: !!settings.skillAutoInject,
+              skillMaxChars: Number(settings.skillMaxChars) || 8000,
             })
           : null,
       });
@@ -427,8 +472,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request),
-      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", memoryPrompts.get(request)].filter(Boolean).join("\n\n"),
+      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request) || hasSkillPrompt(request),
+      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", memoryPrompts.get(request), getSkillPrompt(request)].filter(Boolean).join("\n\n"),
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,

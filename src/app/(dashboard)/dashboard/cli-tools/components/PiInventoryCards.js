@@ -56,6 +56,22 @@ export default function PiInventoryCards() {
   const [llmError, setLlmError] = useState(null);
   const { copy } = useCopyToClipboard();
   const [copiedKey, setCopiedKey] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [skillDoc, setSkillDoc] = useState(null);
+
+  const openDetail = (kind, item) => {
+    setDetail({ kind, item });
+    setSkillDoc(null);
+    if (kind !== "skill") return;
+    setSkillDoc({ loading: true });
+    fetch(`/api/cli-tools/pi-settings/skill-content?path=${encodeURIComponent(`${item.root}/${item.name}`)}`)
+      .then(async (res) => {
+        const d = await res.json();
+        if (!res.ok) throw new Error(d?.error?.message || `HTTP ${res.status}`);
+        setSkillDoc((cur) => (cur?.loading ? d : cur));
+      })
+      .catch((err) => setSkillDoc((cur) => (cur?.loading ? { error: err.message } : cur)));
+  };
 
   useEffect(() => {
     let active = true;
@@ -199,7 +215,11 @@ export default function PiInventoryCards() {
               </thead>
               <tbody>
                 {mcpServers.map((s) => (
-                  <tr key={s.name} className="border-t border-black/[0.04] dark:border-white/[0.05]">
+                  <tr
+                    key={s.name}
+                    onClick={() => openDetail("mcp", s)}
+                    className="cursor-pointer border-t border-black/[0.04] hover:bg-black/[0.03] dark:border-white/[0.05] dark:hover:bg-white/[0.04]"
+                  >
                     <td className={`${TD} font-medium text-foreground whitespace-nowrap`}>
                       <span className="flex items-center gap-2">
                         <span
@@ -288,7 +308,11 @@ export default function PiInventoryCards() {
                   const value = valueOf(s.key, s);
                   const dirty = s.key in draft && draft[s.key] !== (ratings[s.key]?.score == null ? "" : String(ratings[s.key].score));
                   return (
-                    <tr key={s.key} className="border-t border-black/[0.04] dark:border-white/[0.05]">
+                    <tr
+                      key={s.key}
+                      onClick={() => openDetail("skill", s)}
+                      className="cursor-pointer border-t border-black/[0.04] hover:bg-black/[0.03] dark:border-white/[0.05] dark:hover:bg-white/[0.04]"
+                    >
                       <td className={`${TD} font-medium whitespace-nowrap`}>
                         <span className={`flex items-center gap-2 ${s.link ? "text-muted-foreground" : "text-foreground"}`}>
                           <span
@@ -334,6 +358,7 @@ export default function PiInventoryCards() {
                             inputMode="numeric"
                             aria-label={`Rating for ${s.name}`}
                             value={value}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) => {
                               const v = (e.target.value ?? "").replace(/[^0-9]/g, "");
                               setDraft((prev) => ({ ...prev, [s.key]: v }));
@@ -360,6 +385,77 @@ export default function PiInventoryCards() {
           </div>
         )}
       </Card>
+      <Modal isOpen={!!detail} onClose={() => setDetail(null)} title={detail?.kind === "mcp" ? "MCP server detail" : "Skill detail"} className="sm:max-w-3xl">
+        {detail?.kind === "mcp" && (
+          <div className="flex flex-col gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span aria-hidden="true" className={`size-2 rounded-full ${STATE_DOT[detail.item.state] || "bg-muted-foreground/40"}`} />
+              <span className="text-base font-semibold">{detail.item.name}</span>
+              <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground dark:bg-white/10">{detail.item.transport}</span>
+              <span className="text-xs text-muted-foreground" title={STATE_HINT[detail.item.state] || detail.item.state}>{detail.item.state}</span>
+            </div>
+            <dl className="grid grid-cols-[6rem_1fr] gap-y-2 text-xs">
+              <dt className="text-muted-foreground">Target</dt>
+              <dd className="break-all rounded bg-secondary/40 px-2 py-1 font-mono">{detail.item.target}</dd>
+              <dt className="text-muted-foreground">Tools</dt><dd className="tabular-nums">{detail.item.tools ?? "—"}</dd>
+            </dl>
+            {detail.item.toolList?.length > 0 && (
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Available tools</div>
+            )}
+            {detail.item.toolList?.length > 0 && (
+              <div className="max-h-96 overflow-auto rounded-md border border-border">
+                {detail.item.toolList.map((t) => (
+                  <div key={t.name} className="border-t border-border px-3 py-2 text-xs first:border-t-0">
+                    <p className="font-mono font-medium">{t.name}</p>
+                    {t.description && <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{t.description}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {detail?.kind === "skill" && (
+          <div className="flex flex-col gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span aria-hidden="true" className={`size-2 rounded-full ${SKILL_DOT[detail.item.status] || "bg-muted-foreground/40"}`} />
+              <span className="text-base font-semibold">{detail.item.name}</span>
+              <span className="text-xs text-muted-foreground" title={SKILL_HINT[detail.item.status] || "SKILL.md OK"}>{detail.item.status}</span>
+              {sameNameRoots.has(detail.item.name) && <span className="rounded bg-red-500/15 px-1 text-[10px] text-red-500">duplicate</span>}
+              {closeWith[detail.item.key]?.length ? <span className="rounded bg-amber-500/15 px-1 text-[10px] text-amber-500">similar</span> : null}
+            </div>
+            <dl className="grid grid-cols-[6rem_1fr] gap-y-2 text-xs">
+              <dt className="text-muted-foreground">Path</dt><dd className="break-all font-mono">{detail.item.root.replace(/^\/Users\/[^/]+/, "~")}/{detail.item.name}</dd>
+              <dt className="text-muted-foreground">Auto score</dt><dd className="tabular-nums">{detail.item.autoScore ?? "—"} ({detail.item.autoGrade ?? "—"})</dd>
+              <dt className="text-muted-foreground">Your rating</dt><dd className="tabular-nums">{ratings[detail.item.key]?.score ?? "—"}</dd>
+              {detail.item.link && (<><dt className="text-muted-foreground">Link</dt><dd className="break-all font-mono">→ {detail.item.link}</dd></>)}
+              {closeWith[detail.item.key]?.length ? (<><dt className="text-muted-foreground">Similar to</dt><dd>{[...new Set(closeWith[detail.item.key])].join(", ")}</dd></>) : null}
+              {sameNameRoots.has(detail.item.name) && (<><dt className="text-muted-foreground">Loaded from</dt><dd className="break-all font-mono">{sameNameRoots.get(detail.item.name).join(", ")}</dd></>)}
+            </dl>
+            {detail.item.signals?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {detail.item.signals.map((g) => (
+                  <span key={g} className="rounded bg-black/5 px-1.5 py-0.5 text-[11px] text-muted-foreground dark:bg-white/10">{g}</span>
+                ))}
+              </div>
+            )}
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Description</div>
+            <p className="whitespace-pre-wrap break-words rounded-md bg-secondary/40 p-3 text-xs leading-5">{detail.item.description || SKILL_HINT[detail.item.status] || "—"}</p>
+            <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span>SKILL.md</span>
+              {skillDoc?.resources?.length ? <span className="normal-case tracking-normal font-normal">{skillDoc.resources.join(" · ")}</span> : null}
+            </div>
+            {skillDoc?.loading && <p className="text-xs text-muted-foreground">Loading…</p>}
+            {skillDoc?.error && <p className="text-xs text-muted-foreground">{skillDoc.error}</p>}
+            {skillDoc?.raw != null && (
+              <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border p-3 font-mono text-[11px] leading-5">
+                {skillDoc.raw}
+                {skillDoc.truncated ? "\n… (truncated)" : ""}
+              </pre>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <Modal isOpen={llmOpen} onClose={() => setLlmOpen(false)} title="LLM routing check" size="lg">
         <div className="flex flex-col gap-3 text-xs">
           <p className="text-muted-foreground">

@@ -77,7 +77,7 @@ const readSkillInfo = async (dir, name) => {
   const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
   const description = (fm.match(/^description:\s*(.*)$/m)?.[1] || "").replace(/^["']|["']$/g, "").trim();
   const status = !raw ? "missing-SKILL.md" : description ? "ok" : "no-description";
-  return { status, description: description.slice(0, 240), autoScore: score, autoGrade: grade, signals };
+  return { status, description, autoScore: score, autoGrade: grade, signals };
 };
 
 // stat() follows symlinks, so linked skill dirs are counted (readdir isDirectory() skips them).
@@ -116,7 +116,8 @@ const readMcpCacheStats = async () => {
     const d = JSON.parse(raw);
     const stats = {};
     for (const [name, s] of Object.entries(d?.servers || {})) {
-      stats[name] = { tools: Array.isArray(s?.tools) ? s.tools.length : 0 };
+      const tools = Array.isArray(s?.tools) ? s.tools : [];
+      stats[name] = { tools: tools.length, toolList: tools.map((t) => ({ name: t.name, description: t.description || "" })) };
     }
     return stats;
   } catch {
@@ -164,6 +165,7 @@ const summarizeServers = async (servers) => {
         target: cfg?.url || [cfg?.command, ...(Array.isArray(cfg?.args) ? cfg.args : [])].filter(Boolean).join(" "),
         state,
         tools: cached?.tools ?? null,
+        toolList: cached?.toolList ?? [],
       };
     })
   );
