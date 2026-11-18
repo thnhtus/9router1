@@ -102,7 +102,7 @@ export default function JevLogsCard() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-text-muted">
-              <tr><th className="py-2 pr-3">Time</th><th className="pr-3">Combo</th><th className="pr-3">Chosen model</th><th className="pr-3">Confidence</th><th className="pr-3">Latency</th><th>Result</th></tr>
+              <tr><th className="py-2 pr-3">Time</th><th className="pr-3">Combo</th><th className="pr-3">Chosen model</th><th className="pr-3">Confidence</th><th className="pr-3">Latency</th><th className="pr-3">Skill</th><th>Result</th></tr>
             </thead>
             <tbody>
               {logs.map((l) => (
@@ -116,6 +116,7 @@ export default function JevLogsCard() {
                     <td className="pr-3 font-mono">{l.choice || "—"}</td>
                     <td className="pr-3 tabular-nums">{l.confidence != null ? `${Math.round(l.confidence * 100)}%` : "—"}</td>
                     <td className="pr-3 tabular-nums">{l.latencyMs != null ? `${l.latencyMs} ms` : "—"}</td>
+                    <td className="pr-3 font-mono text-xs">{l.skill || "—"}</td>
                     <td>{l.error ? <Badge variant="error" title={l.error}>failed</Badge> : <Badge variant="success">ok</Badge>}</td>
                   </tr>
               ))}
@@ -139,6 +140,7 @@ export default function JevLogsCard() {
               Router: <span className="font-mono">{open.detail.routerModel || "—"}</span>
               {open.detail.status != null && ` · HTTP ${open.detail.status}`}
               {open.detail.error && ` · ${open.detail.error}`}
+              {open.detail.skill && ` · Skill picked: <b className="font-mono">{open.detail.skill}</b>`}
             </p>
             <div className="flex flex-col gap-3 lg:flex-row">
               <Json label="Request" value={open.detail.request} />

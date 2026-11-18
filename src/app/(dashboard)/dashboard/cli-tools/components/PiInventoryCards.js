@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card, Button, Modal } from "@/shared/components";
+import { Card, Button, Modal, Input, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const SKILL_DOT = {
@@ -58,6 +58,21 @@ export default function PiInventoryCards() {
   const [copiedKey, setCopiedKey] = useState(null);
   const [detail, setDetail] = useState(null);
   const [skillDoc, setSkillDoc] = useState(null);
+  const [skillCfg, setSkillCfg] = useState({ skillAutoInject: false, skillPickMode: "llm", skillMaxSkills: 2, skillMaxChars: 8000, skillMinConfidence: 0.3 });
+
+  useEffect(() => {
+    fetch("/api/settings").then((r) => r.json()).then((d) => {
+      setSkillCfg((c) => Object.fromEntries(Object.keys(c).map((k) => [k, d[k] ?? c[k]])));
+    }).catch(() => {});
+  }, []);
+
+  // Persist one skill setting. Numbers are clamped so a bad value never reaches the router.
+  const saveSkillField = (key, value, [min, max] = []) => {
+    let v = value;
+    if (min != null) v = Math.min(max, Math.max(min, Number(value) || min));
+    setSkillCfg((c) => ({ ...c, [key]: v }));
+    fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: v }) }).catch(() => {});
+  };
 
   const openDetail = (kind, item) => {
     setDetail({ kind, item });
@@ -188,6 +203,55 @@ export default function PiInventoryCards() {
 
   return (
     <>
+      <Card padding="md" title="Pi skill auto-inject" subtitle="Adds the best-matching local SKILL.md to each request. Smart combos: Jev picks the skill." icon="auto_awesome">
+        <div className="flex flex-col gap-4 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span className="font-medium">Enabled</span>
+            <Toggle checked={skillCfg.skillAutoInject} onChange={(v) => saveSkillField("skillAutoInject", v)} aria-label="Auto-inject Pi skills" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Select
+              label="Pick mode"
+              value={skillCfg.skillPickMode}
+              onChange={(e) => saveSkillField("skillPickMode", e.target.value)}
+              options={[{ value: "llm", label: "LLM" }, { value: "embedding", label: "Embedding" }]}
+            />
+            <Input
+              label="Max skills"
+              type="number"
+              min={1}
+              max={5}
+              value={skillCfg.skillMaxSkills}
+              onChange={(e) => setSkillCfg((c) => ({ ...c, skillMaxSkills: e.target.value }))}
+              onBlur={(e) => saveSkillField("skillMaxSkills", e.target.value, [1, 5])}
+            />
+            <Input
+              label="Max chars"
+              type="number"
+              min={500}
+              max={50000}
+              value={skillCfg.skillMaxChars}
+              onChange={(e) => setSkillCfg((c) => ({ ...c, skillMaxChars: e.target.value }))}
+              onBlur={(e) => saveSkillField("skillMaxChars", e.target.value, [500, 50000])}
+            />
+            {skillCfg.skillPickMode === "embedding" && (
+              <Input
+                label="Min similarity"
+                type="number"
+                step={0.05}
+                min={0}
+                max={1}
+                value={skillCfg.skillMinConfidence}
+                onChange={(e) => setSkillCfg((c) => ({ ...c, skillMinConfidence: e.target.value }))}
+                onBlur={(e) => saveSkillField("skillMinConfidence", e.target.value, [0, 1])}
+              />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            LLM mode costs one extra model call per request. Embedding mode is local and needs a memory embedding model. Skipped when the client already sends its own skill catalog.
+          </p>
+        </div>
+      </Card>
       <Card
         padding="none"
         title="Pi MCP servers"

@@ -47,7 +47,6 @@ export default function TokenSaverClient() {
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
-  const [skillAutoInject, setSkillAutoInject] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -61,29 +60,11 @@ export default function TokenSaverClient() {
   const [showPxpipeModal, setShowPxpipeModal] = useState(false);
   const [pxpipeActionLoading, setPxpipeActionLoading] = useState(false);
   const [pxpipeActionError, setPxpipeActionError] = useState("");
-  const [locale, setLocale] = useState("en");
+  const [locale, setLocale] = useState(() => getCurrentLocale());
 
   const { copied, copy } = useCopyToClipboard();
 
-  useEffect(() => {
-    setLocale(getCurrentLocale());
-    return onLocaleChange(() => setLocale(getCurrentLocale()));
-  }, []);
-
-  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
-  const visibleCavemanLevels = isWenyanLocale
-    ? CAVEMAN_LEVELS
-    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
-
-  useEffect(() => {
-    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
-    if (current?.wenyan && !isWenyanLocale) {
-      setCavemanLevel("ultra");
-      patchSetting({ cavemanLevel: "ultra" });
-    }
-  }, [isWenyanLocale, cavemanLevel]);
-
-  const patchSetting = async (patch) => {
+  const patchSetting = useCallback(async (patch) => {
     try {
       await fetch("/api/settings", {
         method: "PATCH",
@@ -93,7 +74,23 @@ export default function TokenSaverClient() {
     } catch (error) {
       console.log("Error updating setting:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => onLocaleChange(() => setLocale(getCurrentLocale())), []);
+
+  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
+  const visibleCavemanLevels = isWenyanLocale
+    ? CAVEMAN_LEVELS
+    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
+
+  // A wenyan-only level cannot apply outside those locales: show "ultra" instead
+  // of overwriting the user's saved level, and persist the downgrade once.
+  const cavemanLevelBlocked = !isWenyanLocale && !!CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)?.wenyan;
+  const effectiveCavemanLevel = cavemanLevelBlocked ? "ultra" : cavemanLevel;
+
+  useEffect(() => {
+    if (cavemanLevelBlocked) patchSetting({ cavemanLevel: "ultra" });
+  }, [cavemanLevelBlocked, patchSetting]);
 
   const handleRtkEnabled = async (value) => {
     try {
@@ -340,7 +337,7 @@ export default function TokenSaverClient() {
     } finally {
       setRestartingProxy(false);
     }
-  }, [headroomStatus.running, refreshHeadroomStatus]);
+  }, [headroomStatus.running, refreshHeadroomStatus, patchSetting]);
 
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
@@ -364,11 +361,6 @@ export default function TokenSaverClient() {
 
   const handleCustomPromptBlur = () => {
     patchSetting({ customPrompt });
-  };
-
-  const handleSkillAutoInject = (value) => {
-    setSkillAutoInject(value);
-    patchSetting({ skillAutoInject: value });
   };
 
   const refreshPxpipeStatus = useCallback(async () => {
@@ -449,7 +441,6 @@ export default function TokenSaverClient() {
           setPonytailLevel(data.ponytailLevel || "full");
           setCustomPromptEnabled(!!data.customPromptEnabled);
           setCustomPrompt(data.customPrompt || "");
-          setSkillAutoInject(!!data.skillAutoInject);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -686,7 +677,7 @@ export default function TokenSaverClient() {
                       key={lvl.id}
                       onClick={() => handleCavemanLevel(lvl.id)}
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                        cavemanLevel === lvl.id
+                        effectiveCavemanLevel === lvl.id
                           ? "bg-primary text-white border-primary"
                           : "bg-transparent border-border text-muted-foreground hover:bg-muted"
                       }`}
@@ -698,7 +689,7 @@ export default function TokenSaverClient() {
                 </div>
                 <p className="text-xs text-primary">
                   {
-                    CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)
+                    CAVEMAN_LEVELS.find((lvl) => lvl.id === effectiveCavemanLevel)
                       ?.desc
                   }
                 </p>
@@ -792,18 +783,6 @@ export default function TokenSaverClient() {
             </p>
           </div>
         )}
-        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Auto-inject Pi skills</p>
-            <p className="text-sm text-muted-foreground">
-              Picks the most relevant local skill per request (Jev picks it in smart combos) and appends its SKILL.md. Skipped when the client already sends its own skill catalog.
-            </p>
-          </div>
-          <Toggle
-            checked={skillAutoInject}
-            onChange={() => handleSkillAutoInject(!skillAutoInject)}
-          />
-        </div>
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">

@@ -67,20 +67,31 @@ export async function loadOpenBreaker() {
 export async function listJevLogs({ limit = 100, before, page } = {}) {
   const a = await getAdapter();
   const lim = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  // The skill question rides in the logged response; surface just the pick in the
+  // list and drop the body so a page of rows stays small.
+  const withSkill = (rows) =>
+    rows.map((r) => {
+      const body = parseJson(r.response, null);
+      const choice = body?.answers?.skill?.choice;
+      const out = { ...r, skill: typeof choice === "string" && choice !== "none" ? choice : null };
+      delete out.response;
+      return out;
+    });
+
   if (page) {
     const p = Math.max(Number(page) || 1, 1);
     const offset = (p - 1) * lim;
-    return a.all(
-      `SELECT id, createdAt, comboName, routerModel, choice, confidence, latencyMs, status, error FROM jevLogs
+    return withSkill(await a.all(
+      `SELECT id, createdAt, comboName, routerModel, choice, confidence, latencyMs, status, error, response FROM jevLogs
        ORDER BY id DESC LIMIT ? OFFSET ?`,
       [lim, offset],
-    );
+    ));
   }
-  return a.all(
-    `SELECT id, createdAt, comboName, routerModel, choice, confidence, latencyMs, status, error FROM jevLogs
+  return withSkill(await a.all(
+    `SELECT id, createdAt, comboName, routerModel, choice, confidence, latencyMs, status, error, response FROM jevLogs
      ${before ? "WHERE id < ?" : ""} ORDER BY id DESC LIMIT ?`,
     before ? [before, lim] : [lim],
-  );
+  ));
 }
 
 export async function countJevLogs() {
