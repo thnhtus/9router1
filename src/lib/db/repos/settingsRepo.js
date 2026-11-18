@@ -74,6 +74,8 @@ const DEFAULT_SETTINGS = {
   pxpipeTimeoutMs: 15000,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
+  // Pi skills ratings: { "<rootPath>:<skillName>": { score: 0-100, updatedAt: string } }
+  piSkillRatings: {},
 };
 
 async function readRaw() {
