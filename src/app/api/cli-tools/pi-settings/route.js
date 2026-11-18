@@ -15,7 +15,7 @@ const getPiModelsJsonPath = () => {
   return agentPath;
 };
 
-const getPiDir = () => path.dirname(getPiModelsJsonPath());
+
 
 const checkPiInstalled = async () => {
   const isWindows = os.platform() === "win32";
@@ -46,6 +46,121 @@ const has9RouterConfig = (settings) => {
     if (prov.baseUrl && prov.baseUrl.includes("20128")) return true;
   }
   return false;
+};
+
+const getMcpPath = () => path.join(os.homedir(), ".pi", "agent", "mcp-adapter.json");
+
+const readMcpServers = async () => {
+  try {
+    const raw = await fs.readFile(getMcpPath(), "utf-8");
+    const d = JSON.parse(raw);
+    return d && typeof d.mcpServers === "object" ? d.mcpServers : {};
+  } catch {
+    return null;
+  }
+};
+
+const SKILL_ROOTS = [".pi/agent/skills", ".claude/skills", ".agents/skills"];
+
+// Read SKILL.md frontmatter only. status: ok | no-description | missing-SKILL.md
+const readSkillInfo = async (dir) => {
+  try {
+    const raw = await fs.readFile(path.join(dir, "SKILL.md"), "utf-8");
+    const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
+    const description = (fm.match(/^description:\s*(.*)$/m)?.[1] || "").replace(/^["']|["']$/g, "").trim();
+    return { status: description ? "ok" : "no-description", description: description.slice(0, 240) };
+  } catch {
+    return { status: "missing-SKILL.md", description: "" };
+  }
+};
+
+// stat() follows symlinks, so linked skill dirs are counted (readdir isDirectory() skips them).
+const scanSkills = async () => {
+  const out = [];
+  for (const rel of SKILL_ROOTS) {
+    const root = path.join(os.homedir(), rel);
+    let skills = [];
+    try {
+      const entries = await fs.readdir(root);
+      const dirs = [];
+      for (const name of entries.sort()) {
+        const full = path.join(root, name);
+        const st = await fs.stat(full).catch(() => null);
+        if (!st?.isDirectory()) continue;
+        const link = await fs.readlink(full).catch(() => null);
+        dirs.push({ name, full, link });
+      }
+      skills = await Promise.all(
+        dirs.map(async ({ name, full, link }) => ({ name, link, ...(await readSkillInfo(full)) }))
+      );
+    } catch {
+      /* root missing */
+    }
+    const linked = skills.filter((s) => s.link).length;
+    out.push({ path: root, count: skills.length, linked, local: skills.length - linked, skills });
+  }
+  return out;
+};
+
+const getPiDir = () => path.join(os.homedir(), ".pi", "agent");
+
+const readMcpCacheStats = async () => {
+  try {
+    const raw = await fs.readFile(path.join(getPiDir(), "mcp-cache.json"), "utf-8");
+    const d = JSON.parse(raw);
+    const stats = {};
+    for (const [name, s] of Object.entries(d?.servers || {})) {
+      stats[name] = { tools: Array.isArray(s?.tools) ? s.tools.length : 0 };
+    }
+    return stats;
+  } catch {
+    return {};
+  }
+};
+
+const commandExists = async (command) => {
+  if (!command) return false;
+  if (command.includes("/")) {
+    try {
+      await fs.access(command);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    await execAsync(`command -v ${JSON.stringify(command)}`, { windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const summarizeServers = async (servers) => {
+  const cache = await readMcpCacheStats();
+  return Promise.all(
+    Object.entries(servers || {}).map(async ([name, cfg]) => {
+      const isHttp = !cfg?.command;
+      const cached = cache[name];
+      let state = "unknown";
+      if (cached) {
+        state = "ready";
+      } else if (isHttp) {
+        state = "never connected";
+      } else if (await commandExists(cfg.command)) {
+        state = "installed";
+      } else {
+        state = "missing";
+      }
+      return {
+        name,
+        transport: cfg?.type || (isHttp ? "http" : "stdio"),
+        target: cfg?.url || [cfg?.command, ...(Array.isArray(cfg?.args) ? cfg.args : [])].filter(Boolean).join(" "),
+        state,
+        tools: cached?.tools ?? null,
+      };
+    })
+  );
 };
 
 const resolveModelsJsonPath = async () => {
@@ -87,12 +202,17 @@ export async function GET() {
 
     const config = await readConfig();
     const configPath = await resolveModelsJsonPath();
+    const mcpServers = await readMcpServers();
 
     return NextResponse.json({
       installed: true,
       config,
       has9Router: has9RouterConfig(config),
       configPath,
+      mcpPath: getMcpPath(),
+      mcpServers: await summarizeServers(mcpServers),
+      exaMcpEnabled: !!mcpServers?.exa,
+      skills: await scanSkills(),
     });
   } catch (err) {
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
@@ -179,6 +299,7 @@ export async function POST(request) {
       success: true,
       message: "Pi settings applied! Use /model in Pi to select the 9Router model.",
       configPath,
+      mcpPath: getMcpPath(),
     });
   } catch (err) {
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });

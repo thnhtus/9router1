@@ -9,7 +9,7 @@ import {
   ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard,
   HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard,
   ClineToolCard, KiloToolCard, DeepSeekTuiToolCard,
-  JcodeToolCard, GrokBuildToolCard, GenericCliToolCard,
+  JcodeToolCard, GrokBuildToolCard, GenericCliToolCard, PiInventoryCards,
 } from "../components";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -167,6 +167,12 @@ export default function ToolDetailClient({ toolId, machineId }) {
       case "grok-build":
         return <GrokBuildToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       case "pi":
+        return (
+          <>
+            <GenericCliToolCard {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />
+            <PiInventoryCards />
+          </>
+        );
       case "omp":
       case "crush":
       case "forge":

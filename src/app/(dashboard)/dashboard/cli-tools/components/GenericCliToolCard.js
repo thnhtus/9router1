@@ -146,6 +146,11 @@ export default function GenericCliToolCard({
 
   const currentBaseUrl = getCurrentBaseUrl();
 
+  const modelsInConfig = (() => {
+    const list = status?.config?.providers?.["9router"]?.models;
+    return Array.isArray(list) ? list.map((m) => (typeof m === "string" ? m : m?.id)).filter(Boolean) : [];
+  })();
+
   const getConfigStatus = () => {
     if (!status?.installed) return null;
     if (!status.has9Router) return "not_configured";
@@ -644,6 +649,12 @@ export default function GenericCliToolCard({
                   </div>
                 )}
               </div>
+
+              {tool.id === "pi" && status?.installed && (
+                <p className="text-xs text-muted-foreground break-all">
+                  Models in models.json ({modelsInConfig.length}): {modelsInConfig.length > 0 ? modelsInConfig.join(", ") : "none (modelOverrides only)"}
+                </p>
+              )}
 
               {/* Messages */}
               {message && (
