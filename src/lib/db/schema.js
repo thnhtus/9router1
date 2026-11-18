@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -186,6 +186,20 @@ export const TABLES = {
       latencyN: "INTEGER NOT NULL DEFAULT 0",
     },
     primaryKey: "PRIMARY KEY (hour, comboName)",
+  },
+  // Hourly skill auto-inject counters, kept forever (small rows) so the whole history
+  // survives the jevLogs cap. skill = '' on the rollup row that carries request counts.
+  // source = 'jev' (smart combo), 'llm' or 'embedding' (direct/non-smart picker).
+  skillPickHourly: {
+    columns: {
+      hour: "TEXT NOT NULL", // ISO, truncated to the hour (UTC)
+      source: "TEXT NOT NULL DEFAULT ''",
+      skill: "TEXT NOT NULL DEFAULT ''",
+      picks: "INTEGER NOT NULL DEFAULT 0", // times this skill was injected
+      requests: "INTEGER NOT NULL DEFAULT 0", // pick attempts (rollup row only)
+      withSkill: "INTEGER NOT NULL DEFAULT 0", // attempts that injected at least one skill
+    },
+    primaryKey: "PRIMARY KEY (hour, source, skill)",
   },
   // Hourly token-saver counters (Jev-gated lossy savers + RTK), kept forever (small rows).
   // level = 'L1'..'L4' when Jev classified the turn, '' when no signal (no smart combo).

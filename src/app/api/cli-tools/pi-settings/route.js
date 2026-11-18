@@ -9,6 +9,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { scoreSkill } from "@/shared/utils/skillScore";
 import { findDuplicateSkills } from "@/shared/utils/skillDuplicates";
+import { skillCategory } from "@/lib/piSkills.js";
 
 const execAsync = promisify(exec);
 
@@ -77,7 +78,7 @@ const readSkillInfo = async (dir, name) => {
   const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
   const description = (fm.match(/^description:\s*(.*)$/m)?.[1] || "").replace(/^["']|["']$/g, "").trim();
   const status = !raw ? "missing-SKILL.md" : description ? "ok" : "no-description";
-  return { status, description, autoScore: score, autoGrade: grade, signals };
+  return { status, description, category: skillCategory(name, description), autoScore: score, autoGrade: grade, signals };
 };
 
 // stat() follows symlinks, so linked skill dirs are counted (readdir isDirectory() skips them).

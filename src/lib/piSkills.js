@@ -10,7 +10,34 @@ import { createHash } from "node:crypto";
 const SKILL_ROOTS = [".pi/agent/skills", ".claude/skills", ".agents/skills"];
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
-let catalogCache = null; // { version, skills: [{ name, description, path }] }
+let catalogCache = null; // { version, skills: [{ name, description, path, category }] }
+
+// Coarse buckets for the dashboard (skills carry no category metadata, so this is
+// prefix + keyword matching on the name, falling back to the description).
+const CATEGORY_RULES = [
+  [/^(cloudflare|cf-cli|turnstile|wrangler|workers|durable-objects|sandbox|basin|k2|gateway-workers|agents-sdk|nextjs-on-cloudflare)/, "Cloudflare"],
+  [/^(impeccable|design-taste|shadcn|vercel-brand|ui-overhaul|forma|antislop|humanizer|framer)/, "Design & UI"],
+  [/^(founder-|clickup)/, "Business"],
+  [/^(pre-qc|qc-test|web-perf)/, "QA & Perf"],
+  [/^(graphify|last30days|use-tinyfish|document-to-ieee|find-skills|reach)/, "Research & Docs"],
+  [/^(ego-browser|browseros|playwright|reverse-engineer|rea-)/, "Browser & RE"],
+  [/^(openrig|rigs|refocusing|council-mode|ponytail|pi-)/, "Agent workflow"],
+];
+const CATEGORY_KEYWORDS = [
+  [/cloudflare|worker|wrangler|d1\b|r2\b|turnstile/i, "Cloudflare"],
+  [/core web vitals?|\blcp\b|\bfcp\b|\bcls\b|\binp\b|lighthouse|page (speed|perf)|loading performance/i, "QA & Perf"],
+  [/\bqa\b|test ?case|regression|sprint review|accessibility audit/i, "QA & Perf"],
+  [/\bdesign\b|\bui\b|typography|landing page|visual design/i, "Design & UI"],
+  [/\bpdf\b|document|specification|\bsrs\b|\bbrd\b|\bprd\b/i, "Research & Docs"],
+  [/\bbrowser\b|playwright|puppeteer|headless|chrome ?devtools/i, "Browser & RE"],
+];
+
+export function skillCategory(name = "", description = "") {
+  const n = name.toLowerCase();
+  for (const [re, cat] of CATEGORY_RULES) if (re.test(n)) return cat;
+  for (const [re, cat] of CATEGORY_KEYWORDS) if (re.test(description)) return cat;
+  return "Other";
+}
 
 export function clearSkillCatalog() {
   catalogCache = null;
@@ -37,11 +64,16 @@ export async function getSkillCatalog() {
       } catch {
         raw = "";
       }
-      skills.push({ name, description: frontmatterDescription(raw).slice(0, 200), path: full });
+      skills.push({
+        name,
+        description: frontmatterDescription(raw).slice(0, 200),
+        path: full,
+        category: skillCategory(name, frontmatterDescription(raw)),
+      });
     }
   }
   const version = createHash("sha256")
-    .update(skills.map((s) => s.name + s.description).join("\n"))
+    .update(skills.map((s) => s.name + s.description + s.category).join("\n"))
     .digest("hex")
     .slice(0, 12);
   catalogCache = { version, skills };

@@ -16,3 +16,4 @@ See [ui/taste.md](ui/taste.md)
 # Git workflow
 - Fine with committing all worktree changes (including pre-existing uncommitted ones) and pushing straight to master without a PR when they say "commit push" (bare, immediately after a completion report listing uncommitted files, 2026-11-18) / "commit push toàn bộ" / "commit push đi" / "commit push hết đi" / "commit toàn bộ changes". Confidence: 0.9
 - Prefers working directly on master rather than a separate feature branch, even when the worktree has uncommitted changes, so don't suggest branching. Confidence: 0.65
+- When UI work is done but not yet live-verified, orders verification before commit rather than the reverse: "live polish trước đi rồi commit push" (2026-11-18) — run the ego-browser/live check on the running app, then commit+push in the same turn without asking again. Confidence: 0.55

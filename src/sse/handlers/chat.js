@@ -46,6 +46,7 @@ import {
   getSkillPrompt,
   hasSkillPrompt,
 } from "@/lib/piSkills.js";
+import { recordSkillPick } from "@/lib/skillPickStats.js";
 
 // request -> memory block; computed once in handleChat, read by every handleSingleModelChat attempt.
 const memoryPrompts = new WeakMap();
@@ -185,10 +186,15 @@ async function handleChatInner(request, clientRawRequest = null) {
           const pick = settings.skillPickMode === "embedding"
             ? await pickSkillsEmbedding(query, { topK, threshold: Number(settings.skillMinConfidence) || 0.3 })
             : await pickSkillsLLM({ query, request, apiKey, topK });
+          let injected = [];
           if (pick.names.length) {
             const prompt = await buildSkillPrompt(pick.names, { maxChars: Number(settings.skillMaxChars) || 8000 });
-            if (prompt) setSkillPrompt(request, prompt);
+            if (prompt) {
+              setSkillPrompt(request, prompt);
+              injected = pick.names;
+            }
           }
+          recordSkillPick({ source: settings.skillPickMode === "embedding" ? "embedding" : "llm", skills: injected }).catch(() => {});
         }
       } catch (e) {
         log.warn("SKILL", `auto-inject skipped: ${e.message}`);

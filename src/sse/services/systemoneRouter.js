@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { getRoutingProfiles, getModelTiers, readCatalog, pickByLevel } from "@/lib/llmStats.js";
 import { getSkillCatalog, buildSkillPrompt, setSkillPrompt, hasClientSkillCatalog } from "@/lib/piSkills.js";
 import { appendJevLog, countJevSkip, recordBreakerEvent, loadOpenBreaker } from "@/lib/jevLogs.js";
+import { recordSkillPick } from "@/lib/skillPickStats.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import { getComboFairness, hydrateComboFairness, FAIR_ERR_TURNS } from "open-sse/services/combo.js";
 import {
@@ -78,11 +79,16 @@ function cacheKey(body, models, skillOn) {
 // Injects the Jev-picked skill into the request; runs on cache hits too so the skill survives TTL reuse.
 // Only a skill name from the live catalog is loaded; anything else is ignored.
 async function applySkill(opts, route) {
-  if (!opts?.skillAutoInject || !opts.request || !route?.skill) return;
+  if (!opts?.skillAutoInject || !opts.request) return;
   const { skills } = await getSkillCatalog();
-  if (!skills.some((s) => s.name === route.skill)) return;
-  const prompt = await buildSkillPrompt([route.skill], { maxChars: opts.skillMaxChars || 8000 });
+  const picked = route?.skill && skills.some((s) => s.name === route.skill) ? route.skill : null;
+  if (!picked) {
+    recordSkillPick({ source: "jev", skills: [] }).catch(() => {});
+    return;
+  }
+  const prompt = await buildSkillPrompt([picked], { maxChars: opts.skillMaxChars || 8000 });
   if (prompt) setSkillPrompt(opts.request, prompt);
+  recordSkillPick({ source: "jev", skills: prompt ? [picked] : [] }).catch(() => {});
 }
 
 /**

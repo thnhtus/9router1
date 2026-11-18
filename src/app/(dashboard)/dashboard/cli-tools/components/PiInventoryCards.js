@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Modal, Input, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import SkillPickStats from "./SkillPickStats";
 
 const SKILL_DOT = {
   ok: "bg-green-500",
@@ -252,6 +253,7 @@ export default function PiInventoryCards() {
           </p>
         </div>
       </Card>
+      <SkillPickStats />
       <Card
         padding="none"
         title="Pi MCP servers"
@@ -361,6 +363,7 @@ export default function PiInventoryCards() {
                 <tr>
                   <th className={TH}>Skill</th>
                   <th className={TH}>Source</th>
+                  <th className={TH}>Category</th>
                   <th className={TH}>Status</th>
                   <th className={`${TH} text-center`}>Score</th>
                   <th className={TH}>Grade</th>
@@ -409,6 +412,13 @@ export default function PiInventoryCards() {
                       </td>
                       <td className={`${TD} whitespace-nowrap text-muted-foreground/80`} title={s.root}>
                         {s.root.replace(/^\/Users\/[^/]+/, "~")}
+                      </td>
+                      <td className={`${TD} whitespace-nowrap`}>
+                        {s.category ? (
+                          <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-white/10">{s.category}</span>
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
                       </td>
                       <td className={`${TD} whitespace-nowrap text-muted-foreground`} title={SKILL_HINT[s.status] || "SKILL.md OK"}>
                         {s.status}
