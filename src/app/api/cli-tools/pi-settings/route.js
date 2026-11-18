@@ -7,6 +7,8 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { scoreSkill } from "@/shared/utils/skillScore";
+import { findDuplicateSkills } from "@/shared/utils/skillDuplicates";
 
 const execAsync = promisify(exec);
 
@@ -62,16 +64,20 @@ const readMcpServers = async () => {
 
 const SKILL_ROOTS = [".pi/agent/skills", ".claude/skills", ".agents/skills"];
 
-// Read SKILL.md frontmatter only. status: ok | no-description | missing-SKILL.md
-const readSkillInfo = async (dir) => {
+// Read SKILL.md, then score it structurally. status: ok | no-description | missing-SKILL.md
+const readSkillInfo = async (dir, name) => {
+  let raw = "";
   try {
-    const raw = await fs.readFile(path.join(dir, "SKILL.md"), "utf-8");
-    const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
-    const description = (fm.match(/^description:\s*(.*)$/m)?.[1] || "").replace(/^["']|["']$/g, "").trim();
-    return { status: description ? "ok" : "no-description", description: description.slice(0, 240) };
+    raw = await fs.readFile(path.join(dir, "SKILL.md"), "utf-8");
   } catch {
-    return { status: "missing-SKILL.md", description: "" };
+    raw = "";
   }
+  const resources = await fs.readdir(dir).catch(() => []);
+  const { score, grade, signals } = scoreSkill({ raw, dirName: name, resources });
+  const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
+  const description = (fm.match(/^description:\s*(.*)$/m)?.[1] || "").replace(/^["']|["']$/g, "").trim();
+  const status = !raw ? "missing-SKILL.md" : description ? "ok" : "no-description";
+  return { status, description: description.slice(0, 240), autoScore: score, autoGrade: grade, signals };
 };
 
 // stat() follows symlinks, so linked skill dirs are counted (readdir isDirectory() skips them).
@@ -91,7 +97,7 @@ const scanSkills = async () => {
         dirs.push({ name, full, link });
       }
       skills = await Promise.all(
-        dirs.map(async ({ name, full, link }) => ({ name, link, ...(await readSkillInfo(full)) }))
+        dirs.map(async ({ name, full, link }) => ({ name, link, ...(await readSkillInfo(full, name)) }))
       );
     } catch {
       /* root missing */
@@ -203,6 +209,16 @@ export async function GET() {
     const config = await readConfig();
     const configPath = await resolveModelsJsonPath();
     const mcpServers = await readMcpServers();
+    const skills = await scanSkills();
+    const flatSkills = skills.flatMap((root) =>
+      root.skills.map((s) => ({
+        key: `${root.path}:${s.name}`,
+        name: s.name,
+        root: root.path,
+        description: s.description,
+      }))
+    );
+    const dup = findDuplicateSkills(flatSkills);
 
     return NextResponse.json({
       installed: true,
@@ -212,7 +228,13 @@ export async function GET() {
       mcpPath: getMcpPath(),
       mcpServers: await summarizeServers(mcpServers),
       exaMcpEnabled: !!mcpServers?.exa,
-      skills: await scanSkills(),
+      skills,
+      duplicates: {
+        sameName: dup.sameName,
+        closePairs: dup.closePairs,
+        nameDup: Object.fromEntries(dup.nameDup),
+        closeWith: Object.fromEntries(dup.closeWith),
+      },
     });
   } catch (err) {
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });

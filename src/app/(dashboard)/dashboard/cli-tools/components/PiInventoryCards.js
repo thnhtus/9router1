@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, Button } from "@/shared/components";
+import { useEffect, useMemo, useState } from "react";
+import { Card, Button, Modal } from "@/shared/components";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const SKILL_DOT = {
   ok: "bg-green-500",
@@ -12,15 +13,6 @@ const SKILL_DOT = {
 const SKILL_HINT = {
   "no-description": "SKILL.md has no description frontmatter",
   "missing-SKILL.md": "No SKILL.md in this folder",
-};
-
-// 80+ = A, 60-79 = B, <60 = C, empty = unrated
-const gradeOf = (v) => (v === "" || v == null ? "" : Number(v) >= 80 ? "A" : Number(v) >= 60 ? "B" : "C");
-
-const GRADE_TEXT = {
-  A: "text-green-500",
-  B: "text-amber-500",
-  C: "text-red-500",
 };
 
 const STATE_DOT = {
@@ -37,7 +29,17 @@ const STATE_HINT = {
   missing: "Command not found on this machine",
 };
 
+// 80+ = A, 60-79 = B, <60 = C, empty = unrated
+const gradeOf = (v) => (v === "" || v == null ? "" : Number(v) >= 80 ? "A" : Number(v) >= 60 ? "B" : "C");
 
+const GRADE_TEXT = {
+  A: "text-green-500",
+  B: "text-amber-500",
+  C: "text-red-500",
+};
+
+const TH = "px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap";
+const TD = "px-3 py-1.5 align-middle";
 
 export default function PiInventoryCards() {
   const [data, setData] = useState(null);
@@ -46,6 +48,14 @@ export default function PiInventoryCards() {
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
+  const [query, setQuery] = useState("");
+  const [llmOpen, setLlmOpen] = useState(false);
+  const [llmBusy, setLlmBusy] = useState(false);
+  const [llmMode, setLlmMode] = useState("route");
+  const [llmResult, setLlmResult] = useState(null);
+  const [llmError, setLlmError] = useState(null);
+  const { copy } = useCopyToClipboard();
+  const [copiedKey, setCopiedKey] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -71,37 +81,84 @@ export default function PiInventoryCards() {
   }, []);
 
   const mcpServers = data?.mcpServers || [];
-  const skills = data?.skills || [];
+  const duplicates = data?.duplicates || {};
+  const sameNameRoots = new Map((duplicates.sameName || []).map((g) => [g.name, g.roots]));
+  const closeWith = duplicates.closeWith || {};
 
-  const dirtyCount = Object.keys(draft).filter((k) => (draft[k] ?? "") !== (String(ratings[k]?.score ?? "") ?? "")).length;
+  const allSkills = useMemo(() => {
+    const roots = data?.skills || [];
+    return roots.flatMap((root) =>
+      (root.skills || []).map((s) => ({ ...s, root: root.path, key: `${root.path}:${s.name}` }))
+    );
+  }, [data?.skills]);
+
+  const visibleSkills = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allSkills;
+    return allSkills.filter(
+      (s) => s.name.toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q)
+    );
+  }, [allSkills, query]);
+
+  const valueOf = (key, s) => {
+    const stored = ratings[key]?.score ?? null;
+    if (key in draft) return draft[key];
+    return stored == null ? (s.autoScore == null ? "" : String(s.autoScore)) : String(stored);
+  };
+
+  const dirtyKeys = Object.keys(draft).filter((k) => draft[k] !== (ratings[k]?.score == null ? "" : String(ratings[k].score)));
+
+  const runLlm = async (mode, targets) => {
+    setLlmMode(mode);
+    setLlmBusy(true);
+    setLlmError(null);
+    setLlmResult(null);
+    try {
+      const res = await fetch("/api/cli-tools/pi-settings/skill-llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: mode,
+          skills: targets.map((s) => ({ key: s.key, name: s.name, description: s.description })),
+          catalog: [...new Map(allSkills.map((s) => [s.name, { name: s.name, description: s.description }])).values()],
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error?.message || d?.error || `HTTP ${res.status}`);
+      setLlmResult(d);
+    } catch (err) {
+      setLlmError(err.message);
+    } finally {
+      setLlmBusy(false);
+    }
+  };
+
+  const copyText = (text, key) => {
+    copy(text, key);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
   const handleSaveRatings = async () => {
+    if (dirtyKeys.length === 0) return;
     const payload = {};
-    for (const key of Object.keys(draft)) {
+    for (const key of dirtyKeys) {
       const raw = (draft[key] ?? "").trim();
-      const score = raw === "" ? null : Number(raw);
-      if (score === null || !Number.isFinite(score)) continue;
-      if (score < 0 || score > 100) continue;
-      payload[key] = score;
+      payload[key] = raw === "" ? null : Number(raw);
     }
-    const deleted = Object.keys(draft).filter((k) => (draft[k] ?? "").trim() === "" && ratings[k]?.score != null);
-    const delPayload = {};
-    for (const key of deleted) delPayload[key] = null;
-    const finalPayload = Object.keys(payload).length ? payload : delPayload;
-    if (Object.keys(finalPayload).length === 0) return;
     setSaving(true);
     setSaveMsg(null);
     try {
       const res = await fetch("/api/cli-tools/pi-settings/skill-ratings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ratings: finalPayload }),
+        body: JSON.stringify({ ratings: payload }),
       });
       const d = await res.json();
       if (res.ok) {
         setRatings(d?.ratings || {});
         setDraft({});
-        setSaveMsg("Saved");
+        setSaveMsg(`Saved ${dirtyKeys.length} rating(s)`);
         setTimeout(() => setSaveMsg(null), 2500);
       } else {
         setSaveMsg(d?.error?.message || "Failed to save ratings.");
@@ -113,123 +170,245 @@ export default function PiInventoryCards() {
     }
   };
 
-  const skillRow = (r, s) => {
-    const key = `${r.path}:${s.name}`;
-    const stored = ratings[key]?.score ?? null;
-    const value = draft[key] ?? (stored == null ? "" : String(stored));
-    const dirty = key in draft && draft[key] !== (stored == null ? "" : String(stored));
-    return (
-      <li key={key} className="flex min-w-0 items-center gap-2 leading-5">
-        <span
-          aria-hidden="true"
-          className={`size-1.5 shrink-0 rounded-full ${SKILL_DOT[s.status] || "bg-muted-foreground/40"}`}
-        />
-        <span className="w-40 shrink-0 truncate font-medium text-foreground" title={s.name}>{s.name}</span>
-        {s.link ? (
-          <span className="rounded bg-black/5 dark:bg-white/10 px-1 text-[10px] text-muted-foreground shrink-0">link</span>
-        ) : null}
-        <input
-          type="number"
-          min={0}
-          max={100}
-          inputMode="numeric"
-          aria-label={`Rating for ${s.name}`}
-          value={value}
-          onChange={(e) => {
-            const v = (e.target.value ?? "").replace(/[^0-9]/g, "");
-            setDraft((prev) => ({ ...prev, [key]: v }));
-          }}
-          placeholder="–"
-          className="w-14 shrink-0 rounded border border-black/10 bg-background px-1.5 py-0.5 text-right text-xs tabular-nums text-foreground outline-none focus:border-primary/50"
-        />
-        <span className={`w-3 shrink-0 text-[10px] font-semibold ${GRADE_TEXT[gradeOf(value)] || ""}`}>
-          {gradeOf(value)}
-        </span>
-        <span className="min-w-0 truncate text-muted-foreground/80" title={s.description || SKILL_HINT[s.status]}>
-          {s.description || SKILL_HINT[s.status]}
-        </span>
-        {dirty ? <span className="size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" /> : null}
-      </li>
-    );
-  };
-
   return (
     <>
       <Card
-        padding="md"
+        padding="none"
         title="Pi MCP servers"
         subtitle={`From ~/.pi/agent/mcp-adapter.json — ${mcpServers.length} configured`}
         icon="extension"
-        action={
-          <span className="text-[11px] text-muted-foreground tabular-nums">{mcpServers.length} servers</span>
-        }
+        className="[&>div:first-child]:px-5 [&>div:first-child]:pt-5 [&>div:first-child]:pb-3"
+        action={<span className="text-[11px] tabular-nums text-muted-foreground">{mcpServers.length} servers</span>}
       >
-        {error && <p className="text-sm text-muted-foreground">Failed to load: {error}</p>}
-        {!error && !data && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {error && <p className="px-5 pb-5 text-sm text-muted-foreground">Failed to load: {error}</p>}
+        {!error && !data && <p className="px-5 pb-5 text-sm text-muted-foreground">Loading…</p>}
         {!error && data && mcpServers.length === 0 && (
-          <p className="text-sm text-muted-foreground">No MCP servers configured.</p>
+          <p className="px-5 pb-5 text-sm text-muted-foreground">No MCP servers configured.</p>
         )}
         {!error && mcpServers.length > 0 && (
-          <ul className="flex flex-col gap-1.5 max-h-80 overflow-y-auto pr-1 text-xs">
-            {mcpServers.map((s) => (
-              <li key={s.name} className="flex min-w-0 items-baseline gap-2 leading-5">
-                <span
-                  aria-hidden="true"
-                  className={`size-1.5 shrink-0 rounded-full ${STATE_DOT[s.state] || "bg-muted-foreground/40"}`}
-                />
-                <span className="font-medium text-foreground shrink-0">{s.name}</span>
-                <span className="rounded bg-black/5 dark:bg-white/10 px-1 text-[10px] uppercase text-muted-foreground shrink-0">{s.transport}</span>
-                <span className="shrink-0 text-muted-foreground" title={STATE_HINT[s.state] || s.state}>
-                  {s.state}{s.tools != null ? ` · ${s.tools} tools` : ""}
-                </span>
-                <span className="min-w-0 truncate text-muted-foreground/70" title={s.target}>{s.target}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="max-h-80 overflow-auto border-t border-black/[0.06] dark:border-white/[0.07]">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-card">
+                <tr>
+                  <th className={TH}>Server</th>
+                  <th className={TH}>Transport</th>
+                  <th className={TH}>State</th>
+                  <th className={`${TH} text-right`}>Tools</th>
+                  <th className={TH}>Target</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mcpServers.map((s) => (
+                  <tr key={s.name} className="border-t border-black/[0.04] dark:border-white/[0.05]">
+                    <td className={`${TD} font-medium text-foreground whitespace-nowrap`}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className={`size-1.5 shrink-0 rounded-full ${STATE_DOT[s.state] || "bg-muted-foreground/40"}`}
+                        />
+                        {s.name}
+                      </span>
+                    </td>
+                    <td className={TD}>
+                      <span className="rounded bg-black/5 px-1 text-[10px] uppercase text-muted-foreground dark:bg-white/10">
+                        {s.transport}
+                      </span>
+                    </td>
+                    <td className={`${TD} whitespace-nowrap text-muted-foreground`} title={STATE_HINT[s.state] || s.state}>
+                      {s.state}
+                    </td>
+                    <td className={`${TD} text-right tabular-nums text-muted-foreground`}>{s.tools ?? "—"}</td>
+                    <td className={`${TD} max-w-0`}>
+                      <span className="block truncate text-muted-foreground/70" title={s.target}>
+                        {s.target}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
       <Card
-        padding="md"
+        padding="none"
         title="Pi skills"
-        subtitle="From .pi/agent/skills, .claude/skills, .agents/skills"
+        subtitle={`From .pi/agent/skills, .claude/skills, .agents/skills — ${allSkills.length} total`}
         icon="school"
+        className="[&>div:first-child]:px-5 [&>div:first-child]:pt-5 [&>div:first-child]:pb-3"
         action={
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-muted-foreground tabular-nums">
-              {dirtyCount ? `${dirtyCount} unsaved` : "saved"}
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter…"
+              className="h-7 w-36 rounded border border-black/10 bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary/50"
+            />
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {dirtyKeys.length ? `${dirtyKeys.length} unsaved` : saveMsg || "saved"}
             </span>
-            <Button size="sm" onClick={handleSaveRatings} disabled={saving || dirtyCount === 0}>
+            <Button size="sm" onClick={handleSaveRatings} disabled={saving || dirtyKeys.length === 0}>
               {saving ? "Saving…" : "Save ratings"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setLlmOpen(true)}>
+              LLM routing check
             </Button>
           </div>
         }
       >
-        {error && <p className="text-sm text-muted-foreground">Failed to load: {error}</p>}
-        {!error && !data && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {!error && data && skills.length === 0 && (
-          <p className="text-sm text-muted-foreground">No skills found.</p>
+        {error && <p className="px-5 pb-5 text-sm text-muted-foreground">Failed to load: {error}</p>}
+        {!error && !data && <p className="px-5 pb-5 text-sm text-muted-foreground">Loading…</p>}
+        {!error && data && allSkills.length === 0 && (
+          <p className="px-5 pb-5 text-sm text-muted-foreground">No skills found.</p>
         )}
-        {!error && skills.length > 0 && (
-          <div className="flex flex-col gap-3 text-xs">
-            {skills.map((r) => (
-              <div key={r.path}>
-                <p className="text-muted-foreground">
-                  <span className="font-medium tabular-nums text-foreground">{r.count}</span>{" "}
-                  <span className="break-all">{r.path}</span>
-                  {r.linked ? (
-                    <span className="ml-1 text-[10px] text-muted-foreground/70">({r.local} local, {r.linked} linked)</span>
-                  ) : null}
-                </p>
-                <ul className="mt-1 flex flex-col gap-1 max-h-72 overflow-y-auto pr-1">
-                  {(r.skills || []).map((s) => skillRow(r, s))}
-                </ul>
-              </div>
-            ))}
+        {!error && (duplicates.sameName?.length || duplicates.closePairs?.length) ? (
+          <p className="px-5 pb-2 text-xs text-amber-500">
+            {duplicates.sameName?.length ? `${duplicates.sameName.length} skill names appear in multiple roots` : ""}
+            {duplicates.sameName?.length && duplicates.closePairs?.length ? " · " : ""}
+            {duplicates.closePairs?.length ? `${duplicates.closePairs.length} description pairs look similar` : ""}
+            {" — Pi may load or pick the wrong one."}
+          </p>
+        ) : null}
+        {!error && allSkills.length > 0 && (
+          <div className="max-h-[32rem] overflow-auto border-t border-black/[0.06] dark:border-white/[0.07]">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-card">
+                <tr>
+                  <th className={TH}>Skill</th>
+                  <th className={TH}>Source</th>
+                  <th className={TH}>Status</th>
+                  <th className={`${TH} text-center`}>Score</th>
+                  <th className={TH}>Grade</th>
+                  <th className={TH}>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleSkills.map((s) => {
+                  const value = valueOf(s.key, s);
+                  const dirty = s.key in draft && draft[s.key] !== (ratings[s.key]?.score == null ? "" : String(ratings[s.key].score));
+                  return (
+                    <tr key={s.key} className="border-t border-black/[0.04] dark:border-white/[0.05]">
+                      <td className={`${TD} font-medium whitespace-nowrap`}>
+                        <span className={`flex items-center gap-2 ${s.link ? "text-muted-foreground" : "text-foreground"}`}>
+                          <span
+                            aria-hidden="true"
+                            className={`size-1.5 shrink-0 rounded-full ${SKILL_DOT[s.status] || "bg-muted-foreground/40"}`}
+                          />
+                          {s.name}
+                          {s.link ? (
+                            <span className="rounded bg-black/5 px-1 text-[10px] font-normal text-muted-foreground dark:bg-white/10">
+                              link
+                            </span>
+                          ) : null}
+                          {sameNameRoots.has(s.name) ? (
+                            <span
+                              className="rounded bg-red-500/15 px-1 text-[10px] font-normal text-red-500"
+                              title={`Same skill loaded from ${sameNameRoots.get(s.name).length} roots: ${sameNameRoots.get(s.name).join(", ")}. Pi sees it twice.`}
+                            >
+                              duplicate
+                            </span>
+                          ) : null}
+                          {closeWith[s.key]?.length ? (
+                            <span
+                              className="rounded bg-amber-500/15 px-1 text-[10px] font-normal text-amber-500"
+                              title={`Description close to: ${[...new Set(closeWith[s.key])].join(", ")}. LLM may pick the wrong one.`}
+                            >
+                              similar
+                            </span>
+                          ) : null}
+                        </span>
+                      </td>
+                      <td className={`${TD} whitespace-nowrap text-muted-foreground/80`} title={s.root}>
+                        {s.root.replace(/^\/Users\/[^/]+/, "~")}
+                      </td>
+                      <td className={`${TD} whitespace-nowrap text-muted-foreground`} title={SKILL_HINT[s.status] || "SKILL.md OK"}>
+                        {s.status}
+                      </td>
+                      <td className={`${TD} text-center`}>
+                        <span className="inline-flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            inputMode="numeric"
+                            aria-label={`Rating for ${s.name}`}
+                            value={value}
+                            onChange={(e) => {
+                              const v = (e.target.value ?? "").replace(/[^0-9]/g, "");
+                              setDraft((prev) => ({ ...prev, [s.key]: v }));
+                            }}
+                            placeholder="–"
+                            className="w-12 rounded border border-black/10 bg-background px-1 py-0.5 text-right tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/50"
+                          />
+                          {dirty ? <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" /> : null}
+                        </span>
+                      </td>
+                      <td className={`${TD} w-12 font-semibold ${GRADE_TEXT[gradeOf(value)] || "text-muted-foreground/40"}`}>
+                        {gradeOf(value) || "—"}
+                      </td>
+                      <td className={`${TD} max-w-0`}>
+                        <span className="block truncate text-muted-foreground/80" title={s.description || SKILL_HINT[s.status]}>
+                          {s.description || SKILL_HINT[s.status]}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-        {saveMsg ? <p className="mt-2 text-xs text-muted-foreground">{saveMsg}</p> : null}
       </Card>
+      <Modal isOpen={llmOpen} onClose={() => setLlmOpen(false)} title="LLM routing check" size="lg">
+        <div className="flex flex-col gap-3 text-xs">
+          <p className="text-muted-foreground">
+            Sends the first 5 visible skills&apos; descriptions through 9router (model <code>auto</code>) against the full catalog of {allSkills.length} skills and checks whether the LLM picks the same skill back.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={llmBusy} onClick={() => runLlm("route", visibleSkills.slice(0, 5))}>
+              {llmBusy && llmMode === "route" ? "Running…" : "Run routing test"}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={llmBusy || !visibleSkills[0]} onClick={() => runLlm("suggest", visibleSkills.slice(0, 1))}>
+              {llmBusy && llmMode === "suggest" ? "Running…" : `Suggest description for ${visibleSkills[0]?.name || "—"}`}
+            </Button>
+          </div>
+          {llmError && <p className="text-red-500">{llmError}</p>}
+          {llmResult?.action === "route" && (
+            <>
+              <p className="tabular-nums">
+                Correct {llmResult.summary.correct}/{llmResult.summary.scored ?? llmResult.summary.total}
+                {llmResult.summary.rate == null ? "" : ` (${Math.round(llmResult.summary.rate * 100)}%)`}
+                {llmResult.summary.errors ? ` · ${llmResult.summary.errors} model error(s), not counted` : ""}
+              </p>
+              <table className="w-full">
+                <tbody>
+                  {llmResult.results.map((r) => (
+                    <tr key={r.key} className="border-t border-black/[0.06] dark:border-white/[0.07]">
+                      <td className="py-1 pr-2 font-medium">{r.name}</td>
+                      <td className="py-1 pr-2 text-muted-foreground">picked: {r.picked ?? r.error}</td>
+                      <td className={`py-1 font-semibold ${r.error ? "text-muted-foreground" : r.ok ? "text-green-500" : "text-red-500"}`}>
+                        {r.error ? "ERR" : r.ok ? "OK" : "MISS"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {llmResult?.action === "suggest" && (
+            <div className="flex flex-col gap-2">
+              <p className="text-muted-foreground">Current: {llmResult.original || "(empty)"}</p>
+              <pre className="whitespace-pre-wrap break-words rounded bg-black/5 p-2 dark:bg-white/5">{llmResult.suggested}</pre>
+              <div>
+                <Button size="sm" variant="ghost" onClick={() => copyText(llmResult.suggested, "suggest")}>
+                  {copiedKey === "suggest" ? "Copied!" : "Copy suggestion"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </>
   );
 }
