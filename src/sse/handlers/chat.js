@@ -388,8 +388,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               comboName: modelStr,
               log,
               request,
-              skillAutoInject: !!settings.skillAutoInject,
-              skillMaxChars: Number(settings.skillMaxChars) || 8000,
+              skillAutoInject: !!chatSettings.skillAutoInject,
+              skillMaxChars: Number(chatSettings.skillMaxChars) || 8000,
             })
           : null,
       });
