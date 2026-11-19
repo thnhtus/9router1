@@ -26,7 +26,7 @@ function ModelBar({ a, ms, elapsed }) {
   );
 }
 
-const stateText = (a) => (a.status === "failed" ? `Failed${a.code ? ` · ${a.code}` : ""}` : LABEL[a.status]);
+const stateText = (a) => (a.status === "failed" ? `Failed${a.code ? ` · ${a.code}` : ""}${a.kind ? ` · ${a.kind}` : ""}` : LABEL[a.status]);
 
 function Wires({ n, side, attempts }) {
   const h = n * ROW + (n - 1) * GAP, mid = h / 2;

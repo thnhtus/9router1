@@ -318,7 +318,7 @@ export async function getComboHealthMap() {
     const health = {};
     for (const [model, m] of Object.entries(members)) {
       if (!m?.failStreak && !m?.removedAt) continue;
-      health[model] = { failStreak: m.failStreak || 0, removedAt: m.removedAt || null };
+      health[model] = { failStreak: m.failStreak || 0, removedAt: m.removedAt || null, removedKind: m.lastDeadKind || null };
     }
     if (Object.keys(health).length) out[name] = health;
   }
@@ -336,13 +336,13 @@ function fairnessState(comboName) {
 export const COMBO_DROP_FAILS = 5;
 
 /** Record a member result. `dead` = the model itself is gone (counts toward removal). */
-export function markComboMember(comboName, model, failed = false, dead = failed, dropFails = COMBO_DROP_FAILS) {
+export function markComboMember(comboName, model, failed = false, dead = failed, dropFails = COMBO_DROP_FAILS, errKind = null) {
   const s = fairnessState(comboName);
   const m = s.members.get(model) || {};
   m.lastSeq = s.seq;
   if (failed) { m.errSeq = s.seq; m.fail = (m.fail || 0) + 1; }
-  else { delete m.errSeq; delete m.removedAt; m.ok = (m.ok || 0) + 1; m.failStreak = 0; }
-  if (dead) m.failStreak = (m.failStreak || 0) + 1;
+  else { delete m.errSeq; delete m.removedAt; delete m.lastDeadKind; m.ok = (m.ok || 0) + 1; m.failStreak = 0; }
+  if (dead) { m.failStreak = (m.failStreak || 0) + 1; if (errKind) m.lastDeadKind = errKind; }
   s.members.set(model, m);
   persistFairness(comboName, s);
   return dropFails > 0 && m.failStreak >= dropFails ? dropComboMember(comboName, model, m) : null;
@@ -370,11 +370,12 @@ async function doDrop(comboName, model, m) {
     if (!combo?.models?.includes(model) || combo.models.length <= 1) return false; // pool/adapter model or last one
     await updateCombo(combo.id, { models: combo.models.filter((x) => x !== model) });
     const streak = m.failStreak;
+    const kindTag = m.lastDeadKind ? ` (${m.lastDeadKind})` : "";
     m.removedAt = new Date().toISOString();
     m.failStreak = 0;
     persistFairness(comboName, fairnessState(comboName));
-    console.warn(`[COMBO] removed ${model} from "${comboName}" after ${streak} failed routings in a row`);
-    recordBreakerEvent({ kind: "drop", failStreak: streak, reason: `${comboName}: ${model}` }).catch(() => {});
+    console.warn(`[COMBO] removed ${model} from "${comboName}" after ${streak} failed routings in a row${kindTag}`);
+    recordBreakerEvent({ kind: "drop", failStreak: streak, reason: `${comboName}: ${model}${kindTag}` }).catch(() => {});
     return true;
   } catch { return false; }
 }
@@ -388,7 +389,7 @@ export async function clearComboMemberHealth(comboName, models = []) {
   let changed = false;
   for (const model of models) {
     const m = s.members.get(model);
-    if (m && (m.failStreak || m.removedAt)) { m.failStreak = 0; delete m.removedAt; changed = true; }
+    if (m && (m.failStreak || m.removedAt || m.lastDeadKind)) { m.failStreak = 0; delete m.removedAt; delete m.lastDeadKind; changed = true; }
   }
   if (changed) persistFairness(comboName, s);
 }
@@ -794,6 +795,7 @@ export async function handleComboChat({
   let refusedProvider = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  let lastKind = null;
   let requestScopedResult = null;
   const trace = startComboTrace(comboName, comboStrategy, rotatedModels);
 
@@ -912,7 +914,8 @@ export async function handleComboChat({
       try {
         const errorBody = await result.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
+        // unavailableResponse() nests retryAfter under error; older bodies put it at top level.
+        retryAfter = errorBody?.error?.retryAfter || errorBody?.retryAfter || null;
         // chat.js puts the real provider status here when it wraps a lockout in a synthetic 503.
         upstreamStatus = Number(errorBody?.error?.upstream_status) || null;
       } catch {
@@ -956,7 +959,7 @@ export async function handleComboChat({
         if (!lastStatus) lastStatus = result.status;
         if (!requestScopedResult) requestScopedResult = result;
         if (health) markComboMember(comboName, modelStr, true, false, dropFails);
-        trace.failed(i, result.status, errorText);
+        trace.failed(i, result.status, errorText, kind);
         continue;
       }
 
@@ -972,14 +975,15 @@ export async function handleComboChat({
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
+      lastKind = kind;
       // Mark dead only for genuinely-irreversible membership faults. Quota / auth /
       // transient-class errors still rotate (shouldFallback=true) but shouldn't
       // drain failStreak toward the COMBO_DROP_FAILS removal threshold, because the
       // member would otherwise be evicted even though rotating through another
       // account or waiting a reset is enough to recover.
       const isDropWorthy = !requestScoped && shouldFallback && kind === ERROR_KIND.MODEL;
-      if (health) markComboMember(comboName, modelStr, true, isDropWorthy, dropFails);
-      trace.failed(i, result.status, errorText);
+      if (health) markComboMember(comboName, modelStr, true, isDropWorthy, dropFails, isDropWorthy ? kind : null);
+      trace.failed(i, result.status, errorText, kind);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
@@ -988,9 +992,11 @@ export async function handleComboChat({
       }
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
-      const busy = error?.code === "SEMAPHORE_BUSY";
-      if (health) markComboMember(comboName, modelStr, true, !busy, dropFails);
-      trace.failed(i, 500, lastError);
+      lastKind = ERROR_KIND.NETWORK;
+      // A throw is a transport/internal fault (socket reset, DNS, abort, semaphore),
+      // never a confirmed "model gone" — it must not count toward auto-drop.
+      if (health) markComboMember(comboName, modelStr, true, false, dropFails);
+      trace.failed(i, 500, lastError, lastKind);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
@@ -1010,7 +1016,7 @@ export async function handleComboChat({
   // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
-  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
+  const allDisabled = lastKind === ERROR_KIND.CREDENTIAL;
   const status = allDisabled ? 503 : (lastStatus || 503);
   const msg = lastError || "All combo models unavailable";
 
@@ -1209,10 +1215,15 @@ function isFreshUserTurn(body) {
 
 // Same rule as the main combo path: only "model gone" (404) drops a panel/worker.
 // 5xx/429/503 are rotatable or transient; a drop is permanent, so never drop on them.
-const isDeadStatus = (code) => code === 404;
-const markPanel = (comboName, model, ok, code, dropFails) => {
+// A 404 "No active credentials" is a config gap, not a deleted model: classify the text too.
+const isDeadStatus = (code, text = "") => code === 404 && checkFallbackError(404, text).kind === ERROR_KIND.MODEL;
+const markPanel = (comboName, model, ok, code, dropFails, text = "") => {
   if (!comboName) return;
-  markComboMember(comboName, model, !ok, !ok && isDeadStatus(code), dropFails);
+  const dead = !ok && isDeadStatus(code, text);
+  markComboMember(comboName, model, !ok, dead, dropFails, dead ? ERROR_KIND.MODEL : null);
+};
+const errText = async (res) => {
+  try { const j = await res?.clone?.().json?.(); return j?.error?.message || j?.message || ""; } catch { return ""; }
 };
 
 export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning, dropFails = COMBO_DROP_FAILS }) {
@@ -1275,7 +1286,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     if (!res) { log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`); continue; }
     if (res.__timeout) { log.warn("FUSION", `Panel ${model} timed out`); markPanel(comboName, model, false, 504, dropFails); continue; }
     if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); markPanel(comboName, model, false, 500, dropFails); continue; }
-    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); if (res.status === 429 || res.status === 503) markPanelCooldown(model); markPanel(comboName, model, false, res.status, dropFails); continue; }
+    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); if (res.status === 429 || res.status === 503) markPanelCooldown(model); markPanel(comboName, model, false, res.status, dropFails, await errText(res)); continue; }
     markPanel(comboName, model, true, 200, dropFails);
     try {
       const json = await res.clone().json();
@@ -1518,7 +1529,7 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
   else if (Array.isArray(base.input)) base.input = flattenToolHistory(base.input);
   const askPlanner = async (prompt) => {
     const res = await withTimeout(handleSingleModel(appendUserTurn(base, prompt), planner, true), cfg.plannerTimeoutMs);
-    if (!res?.ok) { markPanel(comboName, planner, false, res?.__timeout ? 504 : res?.status ?? 500, dropFails); return ""; }
+    if (!res?.ok) { markPanel(comboName, planner, false, res?.__timeout ? 504 : res?.status ?? 500, dropFails, await errText(res)); return ""; }
     markPanel(comboName, planner, true, 200, dropFails);
     try { return extractPanelText(await res.clone().json()); } catch { return ""; }
   };
@@ -1551,7 +1562,7 @@ export async function handleOrchestrateChat({ body, models, handleSingleModel, l
           log.warn("ORCHESTRATE", `Worker ${worker} failed on "${s.title}"`, { status: code });
           if (code === 429 || code === 503) markPanelCooldown(worker);
           trace.failed(i, code, res?.__timeout ? "timeout" : res?.__error?.message);
-          markPanel(comboName, worker, false, code, dropFails);
+          markPanel(comboName, worker, false, code, dropFails, await errText(res));
           return null;
         }
         markPanel(comboName, worker, true, 200, dropFails);

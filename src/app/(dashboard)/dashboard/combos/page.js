@@ -727,7 +727,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                     {health[model]?.failStreak > 0 && (
                       <span
                         className="rounded bg-red-500/15 px-1 text-[10px] font-medium text-red-600 dark:text-red-400"
-                        title={`Jev: unreachable ${health[model].failStreak}${dropFails > 0 ? `/${dropFails}` : ""} routings${dropFails > 0 ? ` — auto-removed at ${dropFails}` : ""}`}
+                        title={`Jev: unreachable ${health[model].failStreak}${health[model].removedKind ? ` · ${health[model].removedKind}` : ""}${dropFails > 0 ? `/${dropFails}` : ""} routings${dropFails > 0 ? ` — auto-removed at ${dropFails}` : ""}`}
                       >
                         {health[model].failStreak}{dropFails > 0 ? `/${dropFails}` : ""}
                       </span>
@@ -751,9 +751,10 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               return (
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
                   <span className="font-medium">Jev removed:</span>
-                  {visibleDropped.map(([m]) => (
+                  {visibleDropped.map(([m, st]) => (
                     <span key={m} className="inline-flex items-center gap-0.5 rounded bg-red-500/10 px-1.5 py-0.5">
                       <code className="font-mono text-xs">{m}</code>
+                      {st.removedKind && <span className="text-[10px] opacity-70">· {st.removedKind}</span>}
                       <button
                         type="button"
                         onClick={() => onRestore?.(m)}

@@ -32,8 +32,8 @@ export function startComboTrace(combo, strategy, models) {
     run(i, fn) { return als.run({ run, i }, fn); },
     // model: the attempt switched to another model (orchestrate worker failover).
     trying(i, model) { t0 = Date.now(); Object.assign(run.attempts[i], { status: "trying", at: t0 }, model ? { model } : {}); },
-    failed(i, code, reason) {
-      Object.assign(run.attempts[i], { status: "failed", code: code ?? null, reason: reason ? String(reason).slice(0, 200) : null, ms: Date.now() - (run.attempts[i].at ?? t0) });
+    failed(i, code, reason, errKind = null) {
+      Object.assign(run.attempts[i], { status: "failed", code: code ?? null, reason: reason ? String(reason).slice(0, 200) : null, kind: errKind ?? null, ms: Date.now() - (run.attempts[i].at ?? t0) });
     },
     // keepOpen: parallel attempts (orchestrate) where one answer does not end the run.
     answered(i, keepOpen) { Object.assign(run.attempts[i], { status: "answered", ms: Date.now() - (run.attempts[i].at ?? t0) }); if (!keepOpen) end("answered"); },

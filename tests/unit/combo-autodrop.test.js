@@ -156,6 +156,33 @@ test("never drops a member that is itself a combo", async () => {
 // chat.js wraps a locked account in a synthetic 503 and carries the real provider status
 // in error.upstream_status. A 404 behind that envelope means the model is gone (drop);
 // a 429 behind it is a quota lockout (keep).
+it("carries the failure kind into the drop log, health map and trace", async () => {
+  const repo = await import("@/lib/db/repos/combosRepo.js");
+  const { handleComboChat, getComboHealthMap } = await import("../../open-sse/services/combo.js");
+  const { listComboTraces } = await import("../../open-sse/services/comboTrace.js");
+  const { listJevDrops } = await import("@/lib/jevLogs.js");
+  const noopLog = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+  const ok = () => Response.json({ choices: [{ message: { role: "assistant", content: "ok" } }] });
+  const modelGone = () => Response.json({ error: { message: "model not found" } }, { status: 404 });
+
+  await repo.createCombo({ name: "kindmix", models: ["p/gone", "q/live"] });
+  for (let i = 0; i < 5; i++) {
+    const r = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["p/gone", "q/live"], comboName: "kindmix", comboStrategy: "fallback", dropFails: 5, log: noopLog,
+      handleSingleModel: async (_b, m) => (m === "p/gone" ? modelGone() : ok()),
+    });
+    await r.json().catch(() => {});
+  }
+  await new Promise((r) => setTimeout(r, 30));
+  const drops = await listJevDrops();
+  expect(drops.some((d) => d.reason === "kindmix: p/gone (model)")).toBe(true);
+  expect((await getComboHealthMap()).kindmix["p/gone"].removedKind).toBe("model");
+  const run = listComboTraces().find((r) => r.combo === "kindmix");
+  expect(run.attempts.find((a) => a.model === "p/gone").kind).toBe("model");
+  expect(run.attempts.find((a) => a.model === "q/live").kind).toBeFalsy();
+});
+
 it("re-classifies the synthetic 503 envelope by upstream_status", async () => {
   const repo = await import("@/lib/db/repos/combosRepo.js");
   const { handleComboChat, getComboHealthMap } = await import("../../open-sse/services/combo.js");
@@ -189,3 +216,51 @@ it("re-classifies the synthetic 503 envelope by upstream_status", async () => {
   const health = await getComboHealthMap();
   expect(health.quota?.x?.failStreak ?? 0).toBe(0);
 }, 20000);
+
+it("does not drop a member on thrown transport errors", async () => {
+  const repo = await import("@/lib/db/repos/combosRepo.js");
+  const { handleComboChat, getComboHealthMap } = await import("../../open-sse/services/combo.js");
+  const noopLog = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+  const ok = () => Response.json({ choices: [{ message: { role: "assistant", content: "ok" } }] });
+  await repo.createCombo({ name: "net", models: ["x/1", "y/2"] });
+  for (let i = 0; i < 6; i++) {
+    await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["x/1", "y/2"], comboName: "net", comboStrategy: "fallback", dropFails: 2, log: noopLog,
+      handleSingleModel: async (_b, m) => { if (m === "x/1") throw new Error("socket hang up"); return ok(); },
+    });
+  }
+  await new Promise((r) => setTimeout(r, 20));
+  expect((await repo.getComboByName("net")).models).toEqual(["x/1", "y/2"]);
+  expect((await getComboHealthMap()).net?.["x/1"]?.failStreak ?? 0).toBe(0);
+});
+
+it("returns 503 when all members fail with credential kind", async () => {
+  const repo = await import("@/lib/db/repos/combosRepo.js");
+  const { handleComboChat } = await import("../../open-sse/services/combo.js");
+  const noopLog = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+  await repo.createCombo({ name: "nocred", models: ["x/1"] });
+  const res = await handleComboChat({
+    body: { messages: [{ role: "user", content: "hi" }] },
+    models: ["x/1"], comboName: "nocred", comboStrategy: "fallback", dropFails: 5, log: noopLog,
+    handleSingleModel: async () => Response.json({ error: { message: "No active credentials for provider: openai" } }, { status: 404 }),
+  });
+  expect(res.status).toBe(503);
+});
+
+it("reads retryAfter from envelope error.retryAfter for exhaustion response", async () => {
+  const repo = await import("@/lib/db/repos/combosRepo.js");
+  const { handleComboChat } = await import("../../open-sse/services/combo.js");
+  const noopLog = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+  await repo.createCombo({ name: "ra", models: ["x/1"] });
+  const when = new Date(Date.now() + 60000).toISOString();
+  const res = await handleComboChat({
+    body: { messages: [{ role: "user", content: "hi" }] },
+    models: ["x/1"], comboName: "ra", comboStrategy: "fallback", dropFails: 5, log: noopLog,
+    handleSingleModel: async () => Response.json({ error: { message: "rate limited", retryAfter: when } }, { status: 429 }),
+  });
+  expect([429,503]).toContain(res.status);
+  const body = await res.json();
+  expect(body.error?.retryAfter).toBe(when);
+  expect(res.headers.get("retry-after")).toBeTruthy();
+});
