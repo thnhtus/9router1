@@ -15,9 +15,7 @@ export default {
   },
   category: "webCookie",
   authType: "cookie",
-  // No "llm": chat models stay API-reachable but are hidden from LLM lists —
-  // this provider is surfaced through the image media pages only.
-  serviceKinds: ["image"],
+  serviceKinds: ["llm", "image"],
   authHint: "Paste your __Secure-1PSID (and __Secure-1PSIDTS) cookie value(s) from gemini.google.com",
   transport: {
     baseUrl: "https://gemini.google.com/app",
@@ -28,10 +26,15 @@ export default {
   // gemini.google.com web UI by typing a prompt, so it has no thinking-budget
   // control to set and never surfaces `reasoning_content`. Tool calling is
   // prompt-emulated only (translator/webTools.js), never native.
+  //
+  // Model list mirrors the REAL mode picker on gemini.google.com (calibrated
+  // 2026-11-19): Auto (default), Everyday help (Hydrogen), Deeper analysis
+  // (Neon), plus the image generator. The Gemini UI has no separate
+  // "flash"/"pro/or" selectable modes, so only these are advertised.
   models: [
-    { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
-    { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash" },
-    { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite" },
+    { id: "gemini-web-auto", name: "Gemini Web (Auto)" },
+    { id: "gemini-web-hydrogen", name: "Gemini Web (Everyday help)" },
+    { id: "gemini-web-neon", name: "Gemini Web (Deeper analysis)" },
     { id: "gemini-image", name: "Gemini Image (web)", params: ["n", "size"], kind: "image" },
   ],
 };

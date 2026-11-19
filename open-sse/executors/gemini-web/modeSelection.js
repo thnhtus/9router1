@@ -3,108 +3,121 @@
 // The executor's real selection step: for each advertised model (and for the
 // Extended Thinking control), it tries the corresponding UI control, then READS
 // BACK the active-mode indicator to confirm the switch actually took effect
-// before the caller is allowed to proceed. `gemini-3.1-pro` is treated as the
-// mode `gemini.google.com/app` already opens to (no interaction needed); every
-// other advertised model requires a confirmed switch.
+// before the caller is allowed to proceed.
 //
-// ⚠️ SELECTOR SET IS UNVALIDATED. Every CSS selector below is a best-effort
-// guess at Gemini's current DOM, not a value confirmed against a live account.
-// That is fine BY DESIGN: `selectGeminiUiMode()` never trusts an unconfirmed
-// guess. If a selector is wrong, the toggle/indicator lookup simply fails, the
-// read-back does not confirm the requested mode, and the caller gets a clear
-// 400 (`unsupported_control_for_provider`) instead of a response silently
-// labeled with a model/mode that never actually ran. Update the selectors only
-// after inspecting the real DOM on a live account, never from guesswork.
+// Selectors below were calibrated against a live Gemini Pro account on
+// 2026-11-19. The mode picker button carries `aria-label` "Open mode picker,
+// currently <Mode>"; opening it reveals a `gem-menu` overlay (test-id
+// `gem-mode-menu`) whose items are `gem-menu-item[role="menuitemradio"]`:
+//   - Auto (default) → "Adapts to your needs"
+//   - Everyday help → "4 Hydrogen"  → picks the Hydrogen mode
+//   - Deeper analysis → "4 Neon"     → picks the Neon mode
+//   - Code & complex work → "4 Carbon" (test-id ends `upsell_MODE_CATEGORY_ULTRA`)
+//     is an UPSELL row — clicking it does NOT switch, so it is never matched.
+// The "Thinking level" submenu is three radios: Low / Medium / High.
+//
+// The design stays fail-closed: a click landing is never treated as success —
+// only a confirmed read-back of the aria-label / radio state is. If a selector
+// is wrong, the lookup fails and the caller gets a clear 400
+// (`unsupported_control_for_provider`) instead of a response silently labeled
+// with a model/mode that never actually ran.
+
+const MODE_BUTTON = '[data-test-id="bard-mode-menu-button"]';
+const MENU_ITEM = 'gem-menu-item[role="menuitemradio"]';
+const THINK_RADIO = 'gem-menu-item[role="menuitemradio"]';
 
 // Model -> Gemini UI mode map for the advertised ids. Keep the two catalogs in
-// sync: an advertised model with no entry here fails closed as `unknown_model`,
-// which is the intended, honest behavior for a model this module cannot yet
-// select.
+// sync: an advertised model with no entry here fails closed as `unknown_model`.
 export const GEMINI_WEB_MODEL_MODES = {
-  "gemini-3.1-pro": { id: "gemini-3.1-pro", isDefault: true },
-  "gemini-3.7-flash": {
-    id: "gemini-3.7-flash",
+  "gemini-web-auto": {
+    id: "gemini-web-auto",
     isDefault: false,
-    toggleSelector:
-      '[data-test-id="bard-mode-menu-button"], button[aria-haspopup="menu"][aria-label*="model" i]',
-    activeIndicatorSelector:
-      '[data-test-id="bard-mode-menu-button"] .mode-title, [data-test-id="bard-mode-menu-button"]',
-    expectedIndicatorPattern: /\bflash\b(?!.*\blite\b)/i,
+    itemText: /Adapts to your needs/,
+    indicatorPattern: /\bAuto\b/i,
   },
-  "gemini-3.1-flash-lite": {
-    id: "gemini-3.1-flash-lite",
+  "gemini-web-hydrogen": {
+    id: "gemini-web-hydrogen",
     isDefault: false,
-    toggleSelector:
-      '[data-test-id="bard-mode-menu-button"], button[aria-haspopup="menu"][aria-label*="model" i]',
-    activeIndicatorSelector:
-      '[data-test-id="bard-mode-menu-button"] .mode-title, [data-test-id="bard-mode-menu-button"]',
-    expectedIndicatorPattern: /flash.*\blite\b/i,
+    itemText: /Hydrogen/,
+    indicatorPattern: /\bHydrogen\b/i,
+  },
+  "gemini-web-neon": {
+    id: "gemini-web-neon",
+    isDefault: false,
+    itemText: /Neon/,
+    indicatorPattern: /\bNeon\b/i,
   },
 };
 
-// The Extended Thinking control — account-dependent, not a model.
+// Pre-calibration gemini-web ids → closest real UI mode (backward compat).
+const LEGACY_ALIASES = {
+  "gemini-3.1-pro": "gemini-web-auto",
+  "gemini-2.5-pro": "gemini-web-auto",
+  "gemini-3.7-flash": "gemini-web-hydrogen",
+  "gemini-3.1-flash-lite": "gemini-web-auto",
+};
+
+
+// Extended Thinking maps to the "Thinking level" radio most thorough option.
+// Eligible accounts expose Low / Medium / High radios; we select High and only
+// accept when it confirms as checked.
 export const GEMINI_WEB_EXTENDED_THINKING_MODE = {
   id: "extended-thinking",
   isDefault: false,
-  toggleSelector:
-    '[data-test-id="deep-think-toggle"], button[aria-label*="extended thinking" i], ' +
-    'button[aria-label*="deep think" i]',
-  activeIndicatorSelector:
-    '[data-test-id="deep-think-toggle"][aria-pressed="true"], [data-test-id="deep-think-toggle"].is-active',
-  expectedIndicatorPattern: /thinking|deep think/i,
+  radioText: /^High\b/,
 };
 
-async function readIndicatorText(el) {
-  try {
-    if (typeof el.textContent === "function") {
-      const text = await el.textContent();
-      if (typeof text === "string") return text;
-    }
-    if (typeof el.innerText === "function") {
-      return await el.innerText();
-    }
-  } catch {
-    // Unreadable is treated the same as "did not confirm" below — never a pass.
-  }
-  return null;
+async function openModePicker(page, timeoutMs) {
+  await page.waitForSelector(MODE_BUTTON, { timeout: timeoutMs });
+  // Defensive close in case a previous interaction left an overlay/backdrop.
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(350);
+  await page.click(MODE_BUTTON);
+  await page
+    .waitForSelector('gem-menu[data-test-id="gem-mode-menu"]', { timeout: timeoutMs })
+    .catch(() => null);
+}
+
+async function currentModeLabel(page) {
+  const aria = await page.getAttribute(MODE_BUTTON, "aria-label").catch(() => null);
+  const m = aria && /currently\s+([A-Za-z]+)/i.exec(aria);
+  return m ? m[1] : null;
 }
 
 /**
  * Try to switch the live Gemini Web page to `descriptor`'s mode, then READ
  * BACK the active-mode indicator before reporting success. A click landing
  * is never itself treated as success — only a confirmed, pattern-matching
- * indicator text is.
+ * indicator is.
  */
 export async function selectGeminiUiMode(page, descriptor, timeoutMs = 5000) {
   if (descriptor.isDefault) return { confirmed: true, descriptor };
 
-  const { toggleSelector, activeIndicatorSelector, expectedIndicatorPattern } = descriptor;
-  if (!toggleSelector || !activeIndicatorSelector || !expectedIndicatorPattern) {
+  const { itemText, indicatorPattern } = descriptor;
+  if (!itemText || !indicatorPattern) {
     return { confirmed: false, reason: "control_not_found", descriptor };
   }
 
-  const toggle = await page
-    .waitForSelector(toggleSelector, { timeout: timeoutMs })
-    .catch(() => null);
-  if (!toggle) return { confirmed: false, reason: "control_not_found", descriptor };
+  await openModePicker(page, timeoutMs);
 
-  await toggle.click();
+  const item = page.locator(MENU_ITEM).filter({ hasText: itemText }).first();
+  const count = await item.count().catch(() => 0);
+  if (!count) return { confirmed: false, reason: "control_not_found", descriptor };
 
-  const indicator = await page
-    .waitForSelector(activeIndicatorSelector, { timeout: timeoutMs })
-    .catch(() => null);
-  if (!indicator) return { confirmed: false, reason: "indicator_not_found", descriptor };
+  await item.click({ timeout: timeoutMs }).catch(() => null);
 
-  const text = await readIndicatorText(indicator);
-  if (!text || !expectedIndicatorPattern.test(text)) {
+  const label = await currentModeLabel(page);
+  if (!label || !indicatorPattern.test(label)) {
     return { confirmed: false, reason: "indicator_mismatch", descriptor };
   }
 
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(350);
   return { confirmed: true, descriptor };
 }
 
 export function resolveGeminiModelMode(modelId) {
-  return GEMINI_WEB_MODEL_MODES[modelId] ?? null;
+  return GEMINI_WEB_MODEL_MODES[modelId] ?? GEMINI_WEB_MODEL_MODES[LEGACY_ALIASES[modelId]] ?? null;
 }
 
 /** Select + verify the requested advertised model's Gemini UI mode. */
@@ -115,8 +128,24 @@ export async function selectGeminiModel(page, modelId, timeoutMs) {
 }
 
 /** Select + verify the Extended Thinking control. */
-export async function selectGeminiExtendedThinking(page, timeoutMs) {
-  return selectGeminiUiMode(page, GEMINI_WEB_EXTENDED_THINKING_MODE, timeoutMs);
+export async function selectGeminiExtendedThinking(page, timeoutMs = 5000) {
+  const descriptor = GEMINI_WEB_EXTENDED_THINKING_MODE;
+  await openModePicker(page, timeoutMs);
+  const item = page.locator(THINK_RADIO).filter({ hasText: descriptor.radioText }).first();
+  const count = await item.count().catch(() => 0);
+  if (!count) {
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(350);
+    return { confirmed: false, reason: "control_not_found", descriptor };
+  }
+  await item.click({ timeout: timeoutMs }).catch(() => null);
+  await page.waitForTimeout(300);
+  const checked = await item.getAttribute("aria-checked").catch(() => null);
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(350);
+  return checked === "true"
+    ? { confirmed: true, descriptor }
+    : { confirmed: false, reason: "indicator_mismatch", descriptor };
 }
 
 const REASON_DETAIL = {

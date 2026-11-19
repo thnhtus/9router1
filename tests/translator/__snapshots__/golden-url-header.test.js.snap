@@ -158,6 +158,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > anyapi → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > api-airforce → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2078,6 +2097,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > vercel-ai-gateway �
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > vertex-ai-express → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > volcengine-ark → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2248,6 +2286,13 @@ exports[`GOLDEN buildUrl (default executor providers) > anthropic → url (strea
 {
   "nonStream": "https://api.anthropic.com/v1/messages",
   "stream": "https://api.anthropic.com/v1/messages",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > anyapi → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.anyapi.ai/v1/chat/completions",
+  "stream": "https://api.anyapi.ai/v1/chat/completions",
 }
 `;
 
@@ -2878,6 +2923,13 @@ exports[`GOLDEN buildUrl (default executor providers) > vercel-ai-gateway → ur
 {
   "nonStream": "https://ai-gateway.vercel.sh/v1/chat/completions",
   "stream": "https://ai-gateway.vercel.sh/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > vertex-ai-express → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://aiplatform.googleapis.com/v1/publishers/google/models/MODEL_ID:generateContent/chat/completions",
+  "stream": "https://aiplatform.googleapis.com/v1/publishers/google/models/MODEL_ID:generateContent/chat/completions",
 }
 `;
 

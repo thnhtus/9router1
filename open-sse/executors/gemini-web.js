@@ -17,12 +17,8 @@ import { isMissingBrowserExecutable, resolveSystemChromeExecutable, launchChromi
 import { loadRuntimeDep } from "../services/lazyRuntime.js";
 import { normalizeGeminiCookieInput } from "../utils/geminiCookies.js";
 import { toPlaywrightCookies } from "../utils/webCookieAuth.js";
-import { prepareToolMessages } from "../translator/webTools.js";
-import { buildToolModeResponse } from "./chatgptWebTools.js";
 import {
-  checkGeminiWebUnsupportedControls,
   GEMINI_WEB_UNSUPPORTED_CONTROL_CODE,
-  isForcingToolChoice,
   requestsThinkingBudget,
 } from "./gemini-web/capabilities.js";
 import {
@@ -37,7 +33,7 @@ import { buildImagePrompt, waitForGeminiImage } from "./gemini-web/imageGen.js";
 
 const GEMINI_URL = "https://gemini.google.com/app";
 /** Response-label fallback when no `model` was requested at all. */
-const DEFAULT_MODEL_ID = "gemini-2.5-pro";
+const DEFAULT_MODEL_ID = "gemini-web-auto";
 
 export { isMissingBrowserExecutable } from "./browserExecutableCheck.js";
 
@@ -136,84 +132,6 @@ export function buildGeminiPrompt(messages) {
   parts.push(`Previous conversation:\n${historyLines.join("\n\n")}`);
   parts.push(`Current user message:\n${lastUserContent}`);
   return parts.join("\n\n");
-}
-
-/**
- * Build the plain-text prompt typed into the Gemini web UI when a tool
- * contract is active — every system message (the client's own instruction(s)
- * plus the synthetic tool contract that `prepareToolMessages()` appends last)
- * prepended, in order, to the last user message. gemini-web only ever sends
- * a single flat string (no native message array), so the tool contract and
- * the user's ask are concatenated.
- *
- * Everything except the current ask has to be rendered: an assistant turn that
- * called a tool and the `role: "tool"` result for it are the only evidence
- * Gemini Web gets that the tool already ran. Dropping them made the model
- * re-issue the same call with a fresh id, looping until the client's tool
- * limit stopped it.
- *
- * The boundary must be the current ask itself, not "everything before it": a
- * tool round usually arrives as `system, user, assistant(tool_calls), tool`
- * with NO message after the result, so slicing at `lastUserIdx` threw away the
- * very turns the fix was for.
- */
-export function buildGeminiToolPrompt(effectiveMessages) {
-  const toolPrompt = effectiveMessages
-    .filter((m) => m.role === "system" && typeof m.content === "string")
-    .map((m) => m.content)
-    .join("\n\n");
-  const lastUserIdx = effectiveMessages.map((m) => m.role).lastIndexOf("user");
-  const lastUserMsg = lastUserIdx >= 0 ? effectiveMessages[lastUserIdx] : undefined;
-  const userText = typeof lastUserMsg?.content === "string" ? lastUserMsg.content : "";
-
-  const prior = [];
-  for (const [index, m] of effectiveMessages.entries()) {
-    if (index === lastUserIdx) continue; // rendered below as the current ask
-    if (typeof m.content === "string" && m.content.trim()) {
-      if (m.role === "user") prior.push(`User: ${m.content}`);
-      else if (m.role === "assistant") prior.push(`Assistant: ${m.content}`);
-      else if (m.role === "tool") {
-        const id = typeof m.tool_call_id === "string" ? m.tool_call_id : "";
-        prior.push(id ? `Tool result [${id}]: ${m.content}` : `Tool result: ${m.content}`);
-      }
-    }
-    const calls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
-    for (const call of calls) {
-      const name = typeof call.function?.name === "string" ? call.function.name : "tool";
-      const args = typeof call.function?.arguments === "string" ? call.function.arguments : "{}";
-      const id = typeof call.id === "string" ? ` [${call.id}]` : "";
-      prior.push(`Assistant requested tool${id}: ${name}(${args})`);
-    }
-  }
-
-  // Single-turn: system contract + the current ask.
-  if (prior.length === 0) return toolPrompt ? `${toolPrompt}\n\n${userText}` : userText;
-
-  const parts = [];
-  if (toolPrompt) parts.push(toolPrompt);
-  parts.push(`Previous conversation:\n${prior.join("\n\n")}`);
-  parts.push(`Current user message:\n${userText}`);
-  return parts.join("\n\n");
-}
-
-/**
- * Tool mode: wrap the buffered Gemini response text in the standard OpenAI
- * completion shape, then delegate to the shared `buildToolModeResponse()` —
- * parses `<tool>{...}</tool>` blocks out of the text into `tool_calls`
- * (malformed JSON degrades to ordinary `content`, never throws) and replays
- * either buffered JSON or a terminal SSE chunk depending on `stream`.
- */
-export async function buildGeminiToolResponse(responseText, requestedTools, stream, model, cid, created) {
-  const bufferedJson = new Response(JSON.stringify(formatChatCompletion(responseText, model)), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-  return buildToolModeResponse(bufferedJson, requestedTools, stream, {
-    cid,
-    created,
-    model,
-    idSeed: "gwe",
-  });
 }
 
 const GEMINI_APP_ERROR_TEXT =
@@ -593,26 +511,6 @@ export class GeminiWebExecutor extends BaseExecutor {
       // and those bodies can't be re-read via CDP once the stream completes.
       const baseReply = await readReplyState(page);
 
-      if (hasTools) {
-        const responseText = await waitForGeminiReply({
-          page,
-          baseCount: baseReply.count,
-          baseText: baseReply.lastText,
-          signal,
-        });
-        const cid = `chatcmpl-gwe-${crypto.randomUUID().slice(0, 12)}`;
-        const created = Math.floor(Date.now() / 1000);
-        const toolResponse = await buildGeminiToolResponse(
-          responseText,
-          requestedTools,
-          Boolean(stream),
-          modelId,
-          cid,
-          created
-        );
-        return { response: toolResponse, url: GEMINI_URL, headers: {}, transformedBody: body };
-      }
-
       if (stream) {
         const encoder = new TextEncoder();
         const streamPage = page;
@@ -718,6 +616,14 @@ export class GeminiWebExecutor extends BaseExecutor {
       ) {
         return {
           response: errorResponse(400, rawMessage),
+          url: GEMINI_URL,
+          headers: {},
+          transformedBody: body,
+        };
+      }
+      if (error?.name === "AbortError" || /aborted/i.test(rawMessage)) {
+        return {
+          response: errorResponse(499, rawMessage),
           url: GEMINI_URL,
           headers: {},
           transformedBody: body,
