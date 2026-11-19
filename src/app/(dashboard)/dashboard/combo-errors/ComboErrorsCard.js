@@ -134,18 +134,20 @@ export default function ComboErrorsCard() {
               {selected.member.removedKind && <Badge variant="default">{selected.member.removedKind}</Badge>}
             </div>
             {(() => {
+              // Persisted by combo health (survives restart); falls back to the in-memory trace.
               const failedAttempts = (selected.traces || []).filter((a) => a.status === "failed");
-              const latest = failedAttempts[failedAttempts.length - 1];
+              const trace = failedAttempts[failedAttempts.length - 1];
+              const reason = selected.member.lastError || trace?.reason;
+              if (!reason) return null;
+              const at = selected.member.lastErrorAt || trace?.runAt;
               return (
-                latest && (
-                  <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs">
-                    <span className="font-medium text-red-600 dark:text-red-400">Latest error</span>{" "}
-                    <span className="tabular-nums text-text-muted">{new Date(latest.runAt).toLocaleString()}</span>
-                    {latest.code ? <span className="tabular-nums"> · HTTP {latest.code}</span> : null}
-                    {latest.kind ? <span className="tabular-nums"> · kind {latest.kind}</span> : null}
-                    {latest.reason ? <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-black/5 p-2 font-mono text-[11px] dark:bg-white/5">{latest.reason}</pre> : null}
-                  </div>
-                )
+                <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs">
+                  <span className="font-medium text-red-600 dark:text-red-400">Latest error</span>{" "}
+                  {at && <span className="tabular-nums text-text-muted">{new Date(at).toLocaleString()}</span>}
+                  {trace?.code ? <span className="tabular-nums"> · HTTP {trace.code}</span> : null}
+                  {trace?.kind ? <span className="tabular-nums"> · kind {trace.kind}</span> : null}
+                  <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-black/5 p-2 font-mono text-[11px] dark:bg-white/5">{reason}</pre>
+                </div>
               );
             })()}
             <dl className="grid grid-cols-[9rem_1fr] gap-y-1.5 text-xs">

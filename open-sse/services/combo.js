@@ -317,8 +317,8 @@ export async function getComboHealthMap() {
     const members = { ...(persisted[name]?.members || {}), ...Object.fromEntries(comboFairness.get(name)?.members || []) };
     const health = {};
     for (const [model, m] of Object.entries(members)) {
-      if (!m?.failStreak && !m?.removedAt) continue;
-      health[model] = { failStreak: m.failStreak || 0, removedAt: m.removedAt || null, removedKind: m.lastDeadKind || null };
+      if (!m?.failStreak && !m?.removedAt && !m?.lastError) continue;
+      health[model] = { failStreak: m.failStreak || 0, removedAt: m.removedAt || null, removedKind: m.lastDeadKind || null, lastError: m.lastError || null, lastErrorAt: m.lastErrorAt || null };
     }
     if (Object.keys(health).length) out[name] = health;
   }
@@ -336,12 +336,16 @@ function fairnessState(comboName) {
 export const COMBO_DROP_FAILS = 5;
 
 /** Record a member result. `dead` = the model itself is gone (counts toward removal). */
-export function markComboMember(comboName, model, failed = false, dead = failed, dropFails = COMBO_DROP_FAILS, errKind = null) {
+export function markComboMember(comboName, model, failed = false, dead = failed, dropFails = COMBO_DROP_FAILS, errKind = null, errText = null) {
   const s = fairnessState(comboName);
   const m = s.members.get(model) || {};
   m.lastSeq = s.seq;
   if (failed) { m.errSeq = s.seq; m.fail = (m.fail || 0) + 1; }
-  else { delete m.errSeq; delete m.removedAt; delete m.lastDeadKind; m.ok = (m.ok || 0) + 1; m.failStreak = 0; }
+  else { delete m.errSeq; delete m.removedAt; delete m.lastDeadKind; m.ok = (m.ok || 0) + 1; m.failStreak = 0; delete m.lastError; delete m.lastErrorAt; }
+  if (errText) {
+    m.lastError = String(errText).slice(0, 500);
+    m.lastErrorAt = new Date().toISOString();
+  }
   if (dead) { m.failStreak = (m.failStreak || 0) + 1; if (errKind) m.lastDeadKind = errKind; }
   s.members.set(model, m);
   persistFairness(comboName, s);
@@ -982,7 +986,7 @@ export async function handleComboChat({
       // member would otherwise be evicted even though rotating through another
       // account or waiting a reset is enough to recover.
       const isDropWorthy = !requestScoped && shouldFallback && kind === ERROR_KIND.MODEL;
-      if (health) markComboMember(comboName, modelStr, true, isDropWorthy, dropFails, isDropWorthy ? kind : null);
+      if (health) markComboMember(comboName, modelStr, true, isDropWorthy, dropFails, isDropWorthy ? kind : null, errorText);
       trace.failed(i, result.status, errorText, kind);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
@@ -1220,7 +1224,7 @@ const isDeadStatus = (code, text = "") => code === 404 && checkFallbackError(404
 const markPanel = (comboName, model, ok, code, dropFails, text = "") => {
   if (!comboName) return;
   const dead = !ok && isDeadStatus(code, text);
-  markComboMember(comboName, model, !ok, dead, dropFails, dead ? ERROR_KIND.MODEL : null);
+  markComboMember(comboName, model, !ok, dead, dropFails, dead ? ERROR_KIND.MODEL : null, ok ? null : text);
 };
 const errText = async (res) => {
   try { const j = await res?.clone?.().json?.(); return j?.error?.message || j?.message || ""; } catch { return ""; }
