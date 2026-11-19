@@ -133,6 +133,21 @@ export default function ComboErrorsCard() {
               {selected.member.removedAt ? <Badge variant="error">removed</Badge> : <Badge variant="warning">failing</Badge>}
               {selected.member.removedKind && <Badge variant="default">{selected.member.removedKind}</Badge>}
             </div>
+            {(() => {
+              const failedAttempts = (selected.traces || []).filter((a) => a.status === "failed");
+              const latest = failedAttempts[failedAttempts.length - 1];
+              return (
+                latest && (
+                  <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs">
+                    <span className="font-medium text-red-600 dark:text-red-400">Latest error</span>{" "}
+                    <span className="tabular-nums text-text-muted">{new Date(latest.runAt).toLocaleString()}</span>
+                    {latest.code ? <span className="tabular-nums"> · HTTP {latest.code}</span> : null}
+                    {latest.kind ? <span className="tabular-nums"> · kind {latest.kind}</span> : null}
+                    {latest.reason ? <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-black/5 p-2 font-mono text-[11px] dark:bg-white/5">{latest.reason}</pre> : null}
+                  </div>
+                )
+              );
+            })()}
             <dl className="grid grid-cols-[9rem_1fr] gap-y-1.5 text-xs">
               <dt className="text-text-muted">Combo</dt><dd className="font-mono break-all">{selected.member.combo}</dd>
               <dt className="text-text-muted">Model</dt><dd className="font-mono break-all">{selected.member.model}</dd>
