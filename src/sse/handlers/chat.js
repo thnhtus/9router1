@@ -420,7 +420,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
+        // upstream_status: the real provider status behind this synthetic 503, so a combo can tell
+        // "model gone" (404) from quota/auth lockouts instead of seeing every lockout as 503.
+        const upstreamStatus = lastStatus || Number(credentials.lastErrorCode) || null;
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders, upstreamStatus ? { upstream_status: upstreamStatus } : null);
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);

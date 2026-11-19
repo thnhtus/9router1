@@ -45,40 +45,58 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  auth: 10 * 60 * 1000,
 };
 
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
- * Each rule: { text?, status?, cooldownMs?, backoff? }
+ * Each rule: { text?, status?, cooldownMs?, backoff?, kind? }
  *   - text: substring match (case-insensitive) on error message
  *   - status: HTTP status code match
  *   - cooldownMs: fixed cooldown duration
  *   - backoff: true = use exponential backoff (rate limit)
+ *   - kind: semantic class used by combo-health to decide whether the failure is
+ *     truly permanent ("model") vs. transient/rotatable ("quota", "credential",
+ *     "network"). Defaults to "transient" when omitted.
  */
+export const ERROR_KIND = { CREDENTIAL: "credential", QUOTA: "quota", MODEL: "model", NETWORK: "network", TRANSIENT: "transient", REQUEST: "request" };
+
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
-  { provider: "codex", text: "model is not supported when using codex with a chatgpt account", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
-  // Intl gateway blocks affect the account/IP, so let the connection back off.
-  { provider: "codebuddy-intl", text: "request illegal", backoff: true },
-  { provider: "codebuddy-intl", text: "conversation id missing", backoff: true },
-  { text: "no credentials",           cooldownMs: COOLDOWN.long },
-  { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
-  { text: "rate limit",               backoff: true },
-  { text: "too many requests",        backoff: true },
-  { text: "quota exceeded",           backoff: true },
-  { text: "insufficient credit",      backoff: true },
-  { text: "credit balance is too low", backoff: true },
-  { text: "capacity",                 backoff: true },
-  { text: "overloaded",               backoff: true },
+  // Codex-specific auth boundary — the credential is valid, just not for this
+  // model. Rotate accounts rather than killing the member.
+  { provider: "codex", text: "model is not supported when using codex with a chatgpt account", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS, kind: ERROR_KIND.CREDENTIAL },
+  // Intl gateway blocks affect the account/IP — treat like network hiccups.
+  { provider: "codebuddy-intl", text: "request illegal", backoff: true, kind: ERROR_KIND.NETWORK },
+  { provider: "codebuddy-intl", text: "conversation id missing", backoff: true, kind: ERROR_KIND.NETWORK },
+  { text: "no credentials",           cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },
+  // 404 "No active credentials for provider: X" is a routing/credential state, not a
+  // deleted model — dropping the member would be permanent damage from a config gap.
+  { text: "no active credentials",     cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },
+  { text: "request not allowed",      cooldownMs: COOLDOWN.short, kind: ERROR_KIND.NETWORK },
+  { text: "improperly formed request", cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },
+  // Refresh-token/credential deaths are not fixable by a 2-minute retry; give the
+  // operator time to re-authenticate without hammering the provider.
+  { text: "invalid_grant",            cooldownMs: COOLDOWN.auth, kind: ERROR_KIND.CREDENTIAL },
+  { text: "token expired",            cooldownMs: COOLDOWN.auth, kind: ERROR_KIND.CREDENTIAL },
+  { text: "authentication failed",    cooldownMs: COOLDOWN.auth, kind: ERROR_KIND.CREDENTIAL },
+  // Rate-quota class — always rotational (exponential backoff).
+  { text: "rate limit",               backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "too many requests",        backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "quota exceeded",           backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "insufficient credit",      backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "credit balance is too low", backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "capacity",                 backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "overloaded",               backoff: true, kind: ERROR_KIND.QUOTA },
 
   // --- Status-based rules (fallback when text doesn't match) ---
-  { status: 401, cooldownMs: COOLDOWN.long },
-  { status: 402, cooldownMs: COOLDOWN.long },
-  { status: 403, cooldownMs: COOLDOWN.long },
-  { status: 404, cooldownMs: COOLDOWN.long },
-  { status: 429, backoff: true },
+  { status: 401, cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },
+  { status: 402, cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },
+  { status: 403, cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },
+  // A 404 here means the upstream literally does not know this model — drop-worthy.
+  { status: 404, cooldownMs: COOLDOWN.long, kind: ERROR_KIND.MODEL },
+  { status: 429, backoff: true, kind: ERROR_KIND.QUOTA },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)

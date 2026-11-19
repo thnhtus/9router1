@@ -57,7 +57,7 @@ it("drops after 5 dead routings, resets on success, ignores request-scoped, keep
       dropFails: 2,
       log: noopLog,
       handleSingleModel: async (_b, m) => m === "bad"
-        ? jsonRes(502, { error: { message: "down" } })
+        ? jsonRes(404, { error: { message: "model not found" } })
         : jsonRes(200, { choices: [{ message: { role: "assistant", content: "ok" } }] }),
     });
   }
@@ -75,13 +75,35 @@ it("drops after 5 dead routings, resets on success, ignores request-scoped, keep
       log: noopLog,
       handleSingleModel: async (_b, m, isPanel) => {
         if (m === "p" && isPanel) return jsonRes(200, { choices: [{ message: { role: "assistant", content: JSON.stringify({ subtasks: [{ title: "A", worker: "w2", instruction: "do A" }, { title: "B", worker: "w1", instruction: "do B" }] }) } }] });
-        if (m === "w2") return jsonRes(503, { error: { message: "dead" } });
+        if (m === "w2") return jsonRes(404, { error: { message: "model not found" } });
         return jsonRes(200, { choices: [{ message: { role: "assistant", content: "done" } }] });
       },
     });
   }
   await new Promise((r) => setTimeout(r, 20));
   expect((await repo.getComboByName("orch")).models).toEqual(["p", "w1"]);
+
+  // A synthetic 503 (all accounts locked, recoverable) never counts dead: the worker keeps failing 503
+  // without draining toward the drop threshold, and only a 404 drops it.
+  await repo.createCombo({ name: "orch503", models: ["p", "wq"] });
+  for (let i = 0; i < 3; i++) {
+    await handleOrchestrateChat({
+      body: { messages: [{ role: "user", content: "Step 1 analyze logs, step 2 compare outputs, step 3 write report" }] },
+      models: ["p", "wq"],
+      comboName: "orch503",
+      plannerModel: "p",
+      dropFails: 2,
+      log: noopLog,
+      handleSingleModel: async (_b, m, isPanel) => {
+        if (m === "p" && isPanel) return jsonRes(200, { choices: [{ message: { role: "assistant", content: JSON.stringify({ subtasks: [{ title: "A", worker: "wq", instruction: "do A" }] }) } }] });
+        if (m === "wq") return jsonRes(503, { error: { message: "all accounts locked" } });
+        return jsonRes(200, { choices: [{ message: { role: "assistant", content: "done" } }] });
+      },
+    });
+  }
+  await new Promise((r) => setTimeout(r, 20));
+  expect((await repo.getComboByName("orch503")).models).toEqual(["p", "wq"]); // 503 is recoverable, no drop
+  expect((await getComboHealthMap()).orch503?.wq?.failStreak ?? 0).toBe(0);
 
   // 429 rate-limits don't count toward auto-drop
   await repo.createCombo({ name: "rl", models: ["r1", "r2"] });
@@ -130,3 +152,40 @@ test("never drops a member that is itself a combo", async () => {
   for (let i = 0; i < 6; i++) await markComboMember("parent", "leaf", true, true);
   expect((await repo.getComboByName("parent")).models).toContain("leaf");
 });
+
+// chat.js wraps a locked account in a synthetic 503 and carries the real provider status
+// in error.upstream_status. A 404 behind that envelope means the model is gone (drop);
+// a 429 behind it is a quota lockout (keep).
+it("re-classifies the synthetic 503 envelope by upstream_status", async () => {
+  const repo = await import("@/lib/db/repos/combosRepo.js");
+  const { handleComboChat, getComboHealthMap } = await import("../../open-sse/services/combo.js");
+  const noopLog = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
+  const ok = () => Response.json({ choices: [{ message: { role: "assistant", content: "ok" } }] });
+  const lockout = (upstream) => Response.json({
+    error: { message: `[p/m] upstream said ${upstream}`, upstream_status: upstream },
+  }, { status: 503 });
+
+  await repo.createCombo({ name: "gone", models: ["x/1", "y/2"] });
+  for (let i = 0; i < 2; i++) {
+    await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["x/1", "y/2"], comboName: "gone", comboStrategy: "fallback", dropFails: 2, log: noopLog,
+      handleSingleModel: async (_b, m) => (m === "x/1" ? lockout(404) : ok()),
+    });
+  }
+  await new Promise((r) => setTimeout(r, 20));
+  expect((await repo.getComboByName("gone")).models).toEqual(["y/2"]);
+
+  await repo.createCombo({ name: "quota", models: ["x/1", "y/2"] });
+  for (let i = 0; i < 2; i++) {
+    await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["x/1", "y/2"], comboName: "quota", comboStrategy: "fallback", dropFails: 2, log: noopLog,
+      handleSingleModel: async (_b, m) => (m === "x/1" ? lockout(429) : ok()),
+    });
+  }
+  await new Promise((r) => setTimeout(r, 20));
+  expect((await repo.getComboByName("quota")).models).toEqual(["x/1", "y/2"]);
+  const health = await getComboHealthMap();
+  expect(health.quota?.x?.failStreak ?? 0).toBe(0);
+}, 20000);

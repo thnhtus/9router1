@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { handleComboChat } from "../../open-sse/services/combo.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
+import { ERROR_KIND } from "../../open-sse/config/errorConfig.js";
 
 const silentLog = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
@@ -33,6 +34,7 @@ describe("combo fallback — request-scoped 4xx from a member", () => {
       shouldFallback: false,
       cooldownMs: 0,
       requestScoped: true,
+      kind: ERROR_KIND.REQUEST,
     });
   });
 

@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, ERROR_KIND, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -37,18 +37,18 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel, kind: rule.kind || ERROR_KIND.TRANSIENT };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, kind: rule.kind || ERROR_KIND.TRANSIENT };
     }
 
     // Status-based rule: match HTTP status code
     if (rule.status && rule.status === status) {
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel, kind: rule.kind || ERROR_KIND.TRANSIENT };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, kind: rule.kind || ERROR_KIND.TRANSIENT };
     }
   }
 
@@ -63,11 +63,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
   // text rules still win for rate-limit / quota / capacity wording.
   if (status >= 400 && status < 500 && status !== 401 && status !== 402 && status !== 403 && status !== 429) {
-    return { shouldFallback: false, cooldownMs: 0, requestScoped: true };
+    return { shouldFallback: false, cooldownMs: 0, requestScoped: true, kind: ERROR_KIND.REQUEST };
   }
 
   // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS, kind: ERROR_KIND.TRANSIENT };
 }
 
 /**

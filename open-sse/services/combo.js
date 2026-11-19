@@ -3,6 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { ERROR_KIND } from "../config/errorConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { parseModel } from "./model.js";
@@ -334,7 +335,7 @@ function fairnessState(comboName) {
 // Request-scoped rejections (400 validation/context) don't count: the model is reachable.
 export const COMBO_DROP_FAILS = 5;
 
-/** Record a member result. `dead` = the model could not be called at all (counts toward removal). */
+/** Record a member result. `dead` = the model itself is gone (counts toward removal). */
 export function markComboMember(comboName, model, failed = false, dead = failed, dropFails = COMBO_DROP_FAILS) {
   const s = fairnessState(comboName);
   const m = s.members.get(model) || {};
@@ -907,10 +908,13 @@ export async function handleComboChat({
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
+      let upstreamStatus = null;
       try {
         const errorBody = await result.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
         retryAfter = errorBody?.retryAfter || null;
+        // chat.js puts the real provider status here when it wraps a lockout in a synthetic 503.
+        upstreamStatus = Number(errorBody?.error?.upstream_status) || null;
       } catch {
         // Ignore JSON parse errors
       }
@@ -927,7 +931,11 @@ export async function handleComboChat({
 
       // Check if should fallback to next model
       const { provider } = parseModel(modelStr);
-      const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
+      const { shouldFallback, cooldownMs, requestScoped, kind } = checkFallbackError(upstreamStatus || result.status, errorText, 0, provider);
+      // Ponytail note: `kind` is intentionally used to avoid dropping members on
+      // rotatable failures (auth quench, quota exhaustion, transient network).
+      // Only a genuine "model gone" (kind="model") counts as a permanent death,
+      // because retrying after a day/week is unlikely to revive a deleted alias.
 
       if (!shouldFallback && !requestScoped) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
@@ -964,7 +972,13 @@ export async function handleComboChat({
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
-      if (health) markComboMember(comboName, modelStr, true, isDeadStatus(result.status), dropFails);
+      // Mark dead only for genuinely-irreversible membership faults. Quota / auth /
+      // transient-class errors still rotate (shouldFallback=true) but shouldn't
+      // drain failStreak toward the COMBO_DROP_FAILS removal threshold, because the
+      // member would otherwise be evicted even though rotating through another
+      // account or waiting a reset is enough to recover.
+      const isDropWorthy = !requestScoped && shouldFallback && kind === ERROR_KIND.MODEL;
+      if (health) markComboMember(comboName, modelStr, true, isDropWorthy, dropFails);
       trace.failed(i, result.status, errorText);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
@@ -974,7 +988,8 @@ export async function handleComboChat({
       }
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
-      if (health) markComboMember(comboName, modelStr, true, error?.code !== "SEMAPHORE_BUSY", dropFails);
+      const busy = error?.code === "SEMAPHORE_BUSY";
+      if (health) markComboMember(comboName, modelStr, true, !busy, dropFails);
       trace.failed(i, 500, lastError);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
@@ -1192,11 +1207,12 @@ function isFreshUserTurn(body) {
   return last?.role === "user" && !(Array.isArray(last.content) && last.content.some((c) => c?.type === "tool_result"));
 }
 
-// Panel/worker health for fusion/orchestrate: request-shaped 4xx don't count toward auto-drop.
-// Rate limits (429) are handled by per-model cooldowns, so don't count them toward auto-drop.
-const isDeadStatus = (code) => code !== 400 && code !== 413 && code !== 422 && code !== 429;
+// Same rule as the main combo path: only "model gone" (404) drops a panel/worker.
+// 5xx/429/503 are rotatable or transient; a drop is permanent, so never drop on them.
+const isDeadStatus = (code) => code === 404;
 const markPanel = (comboName, model, ok, code, dropFails) => {
-  if (comboName) markComboMember(comboName, model, !ok, !ok && isDeadStatus(code), dropFails);
+  if (!comboName) return;
+  markComboMember(comboName, model, !ok, !ok && isDeadStatus(code), dropFails);
 };
 
 export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning, dropFails = COMBO_DROP_FAILS }) {

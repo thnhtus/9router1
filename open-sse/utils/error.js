@@ -27,8 +27,10 @@ export function buildErrorBody(statusCode, message) {
  * @param {string} message - Error message
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, extraHeaders = null) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, extraHeaders = null, extraFields = null) {
+  const body = buildErrorBody(statusCode, message);
+  if (extraFields) Object.assign(body.error, extraFields);
+  return new Response(JSON.stringify(body), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
@@ -108,17 +110,20 @@ export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders 
 
 /**
  * Create unavailable response when all accounts are rate limited
- * @param {number} statusCode - Original error status code
+ * @param {number} statusCode - Status of the envelope (always SERVICE_UNAVAILABLE in practice)
  * @param {string} message - Error message (without retry info)
  * @param {string} retryAfter - ISO timestamp when earliest account becomes available
  * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"
+ * @param {object|null} extraHeaders - Additional headers
+ * @param {object|null} extraFields - Extra fields merged into error object; primarily used for upstream_status so combo can re-classify against the true provider status rather than the synthetic 503.
  * @returns {Response}
  */
-export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, extraHeaders = null) {
+export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, extraHeaders = null, extraFields = null) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
-  const msg = `${message} (${retryAfterHuman})`;
+  const body = { error: { message: `${message} (${retryAfterHuman})`, retryAfter } };
+  if (extraFields) Object.assign(body.error, extraFields);
   return new Response(
-    JSON.stringify({ error: { message: msg } }),
+    JSON.stringify(body),
     {
       status: statusCode,
       headers: {

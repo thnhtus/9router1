@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BACKOFF_CONFIG } from "../../open-sse/config/errorConfig.js";
+import { BACKOFF_CONFIG, ERROR_KIND } from "../../open-sse/config/errorConfig.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { handleComboChat } from "../../open-sse/services/combo.js";
 
@@ -31,7 +31,7 @@ afterEach(() => {
 describe("CodeBuddy Intl block backoff (#5024)", () => {
   it.each(["11128:request illegal", "conversation id missing"])("backs off for %s", (msg) => {
     expect(checkFallbackError(400, { code: 11128, msg }, 0, "codebuddy-intl")).toEqual({
-      shouldFallback: true, cooldownMs: BACKOFF_CONFIG.base, newBackoffLevel: 1,
+      shouldFallback: true, cooldownMs: BACKOFF_CONFIG.base, newBackoffLevel: 1, kind: ERROR_KIND.NETWORK,
     });
   });
 
@@ -40,17 +40,17 @@ describe("CodeBuddy Intl block backoff (#5024)", () => {
       checkFallbackError(400, "request illegal", level, "codebuddy-intl").cooldownMs,
     )).toEqual([BACKOFF_CONFIG.base, BACKOFF_CONFIG.base * 2, BACKOFF_CONFIG.base * 4]);
     expect(checkFallbackError(400, "request illegal", BACKOFF_CONFIG.maxLevel, "codebuddy-intl"))
-      .toEqual({ shouldFallback: true, cooldownMs: BACKOFF_CONFIG.max, newBackoffLevel: BACKOFF_CONFIG.maxLevel });
+      .toEqual({ shouldFallback: true, cooldownMs: BACKOFF_CONFIG.max, newBackoffLevel: BACKOFF_CONFIG.maxLevel, kind: ERROR_KIND.NETWORK });
   });
 
   it.each(["openai", "codebuddy-cn", null])("keeps the same text request-scoped for provider %s", (provider) => {
     expect(checkFallbackError(400, "request illegal", 0, provider))
-      .toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true });
+      .toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true, kind: ERROR_KIND.REQUEST });
   });
 
   it("does not classify every 11128 code as a block", () => {
     expect(checkFallbackError(400, { code: 11128, msg: "first message is not system prompt" }, 0, "codebuddy-intl"))
-      .toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true });
+      .toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true, kind: ERROR_KIND.REQUEST });
   });
 
   it("persists the account cooldown and incremented backoff level through the cbai alias", async () => {
