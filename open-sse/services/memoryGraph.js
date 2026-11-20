@@ -100,5 +100,26 @@ export function buildMemoryGraph() {
 
 export async function runMemoryLifecycle(input, threadId = "default") {
   const app = buildMemoryGraph();
-  return app.invoke(input, { configurable: { thread_id: threadId } });
+  const result = await app.invoke(input, { configurable: { thread_id: threadId } });
+  // ponytail: keep last 20 checkpoints/thread to avoid unbounded memory.sqlite growth; upgrade = configurable retention or time-based prune.
+  try {
+    const db = getSaver()?.db;
+    if (db) {
+      db.exec(`
+        WITH ranked AS (
+          SELECT rowid, row_number() OVER (PARTITION BY thread_id, checkpoint_ns ORDER BY checkpoint_id DESC) rn
+          FROM checkpoints
+        ), old AS (SELECT rowid FROM ranked WHERE rn > 20)
+        DELETE FROM writes WHERE (thread_id, checkpoint_ns, checkpoint_id) IN (
+          SELECT thread_id, checkpoint_ns, checkpoint_id FROM checkpoints WHERE rowid IN (SELECT rowid FROM old)
+        );
+        WITH ranked AS (
+          SELECT rowid, row_number() OVER (PARTITION BY thread_id, checkpoint_ns ORDER BY checkpoint_id DESC) rn
+          FROM checkpoints
+        )
+        DELETE FROM checkpoints WHERE rowid IN (SELECT rowid FROM ranked WHERE rn > 20);
+      `);
+    }
+  } catch {}
+  return result;
 }
