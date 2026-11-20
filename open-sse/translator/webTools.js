@@ -17,6 +17,24 @@ const TOOL_CLOSE_RE = /<\/tool>/g;
 // to the end of the text from every such tag, so a run of them was quadratic again.
 const TOOL_CALL_OPEN_RE = /<tool_call(?:\s[^<>]*)?>/g;
 const TOOL_CALL_CLOSE_RE = /<\/tool_call>/g;
+// Raw-field dialect (Gemini Web): <tool name="bash" nonce="..."><command>RAW</command></tool>.
+// The opening tag carries attributes; children are plain text, no JSON, no escaping.
+const TOOL_RAW_OPEN_RE = /<tool\s[^<>]*>/g;
+const TOOL_RAW_CLOSE_RE = /<\/tool>/g;
+
+function parseRawToolCall(inner, openTag) {
+  const attr = {};
+  const attrRe = /([\w-]+)\s*=\s*"([^"]*)"/g;
+  let am;
+  while ((am = attrRe.exec(openTag))) attr[am[1]] = am[2];
+  const name = attr.name || null;
+  const nonce = attr.nonce || null;
+  const args = {};
+  const childRe = /<([A-Za-z_][\w-]*)\s*>([\s\S]*?)<\/\1\s*>/g;
+  let cm;
+  while ((cm = childRe.exec(inner))) args[cm[1]] = cm[2];
+  return { name, nonce, arguments: args };
+}
 
 const DSML_INVOKE_RE =
   /<(?<dsml>｜｜DSML｜｜|\|DSML\|)\s*invoke\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/\k<dsml>\s*invoke\s*>/g;
@@ -255,9 +273,69 @@ function normalizeLooseJson(value) {
     .replace(/,\s*([}\]])/g, "$1");
 }
 
+/** Escape raw newline/tab characters that sit inside a JSON string literal.
+ *  Models often emit a multi-line shell command with literal line breaks. */
+function escapeRawControlsInStrings(text) {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      else if (ch === "\n") { out += "\\n"; continue; }
+      else if (ch === "\r") { out += "\\r"; continue; }
+      else if (ch === "\t") { out += "\\t"; continue; }
+    } else if (ch === '"') {
+      inString = true;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+const TRAILING_SIMPLE_PAIR_RE = /,\s*"([A-Za-z_][\w-]*)"\s*:\s*(-?\d+(?:\.\d+)?|true|false|null|"[^"\\\n]*")\s*$/;
+
+/** `{"command": "<anything, even unescaped quotes>", "timeout": 600}`:
+ *  peel simple trailing pairs off the end, then the single leading string value
+ *  is everything up to the last quote. */
+function parseGreedyStringObject(objText) {
+  let inner = objText.trim().slice(1, -1);
+  const tail = {};
+  for (let m = TRAILING_SIMPLE_PAIR_RE.exec(inner); m; m = TRAILING_SIMPLE_PAIR_RE.exec(inner)) {
+    tail[m[1]] = JSON.parse(m[2]);
+    inner = inner.slice(0, m.index);
+  }
+  const head = /^\s*"([A-Za-z_][\w-]*)"\s*:\s*"([\s\S]*)"\s*$/.exec(inner);
+  if (!head) return null;
+  const body = escapeRawControlsInStrings(`"${head[2].replace(/(^|[^\\])"/g, '$1\\"').replace(/(^|[^\\])"/g, '$1\\"')}"`);
+  try {
+    return { [head[1]]: JSON.parse(body), ...Object.fromEntries(Object.entries(tail).reverse()) };
+  } catch {
+    return null;
+  }
+}
+
+/** Last resort for the tool-call envelope web models emit with broken JSON in
+ *  `arguments` (unescaped quotes / newlines inside a shell command). */
+function parseToolEnvelopeLoose(text) {
+  const m = /^\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[\s\S]*\})\s*(?:,\s*"_nonce"\s*:\s*"([^"]*)"\s*)?\}$/.exec(text.trim());
+  if (!m) return null;
+  let args = null;
+  try {
+    args = JSON.parse(escapeRawControlsInStrings(m[2]));
+  } catch {
+    args = parseGreedyStringObject(m[2]);
+  }
+  if (!args) return null;
+  return m[3] === undefined ? { name: m[1], arguments: args } : { name: m[1], arguments: args, _nonce: m[3] };
+}
+
 export function parseLooseJsonObject(raw) {
   const trimmed = stripCodeFence(raw);
-  for (const candidate of [trimmed, normalizeLooseJson(trimmed)]) {
+  const escaped = escapeRawControlsInStrings(trimmed);
+  for (const candidate of [trimmed, normalizeLooseJson(trimmed), escaped, normalizeLooseJson(escaped)]) {
     try {
       return toRecord(JSON.parse(candidate));
     } catch {
@@ -369,11 +447,55 @@ export function toArgumentsString(value) {
  * `<tool>` JSON to distinguish legitimate tool calls from bare JSON, code-fenced JSON,
  * or copy-attacked envelopes.
  */
-export function serializeToolsToPrompt(tools) {
+export function serializeToolsToPrompt(tools, opts) {
   if (!Array.isArray(tools) || tools.length === 0) return "";
 
   const nonce = getToolNonce(tools);
   if (!nonce) return "";
+
+  if (opts?.dialect === "raw") {
+    // Raw-field dialect: parameters are emitted as bare text inside child
+    // tags instead of JSON, so shell commands with quotes/newlines/backslashes
+    // need no escaping at all. Gemini Web follows this shape reliably (6/6
+    // live) where JSON encoding of those bodies fails.
+    const lines = [];
+    for (const t of tools) {
+      const fn = t?.function;
+      if (!fn?.name) continue;
+      const desc = typeof fn.description === "string" && fn.description ? fn.description : "";
+      let params = "";
+      try {
+        params = fn.parameters ? JSON.stringify(fn.parameters) : "";
+      } catch {
+        params = "";
+      }
+      const fields = [];
+      const pprops = fn.parameters?.properties;
+      if (pprops && typeof pprops === "object") {
+        for (const [key, schema] of Object.entries(pprops)) {
+          fields.push(`  <${key}>RAW ${key}${schema?.type ? ` (${schema.type})` : ""}</${key}>`);
+        }
+      }
+      lines.push(
+        `- ${fn.name}${desc ? `: ${desc}` : ""}${params ? `\n  parameters: ${params}` : ""}` +
+        (fields.length
+          ? `\n  Invoke as:\n  <tool name="${fn.name}" nonce="${nonce}">\n${fields.join("\n")}\n  </tool>`
+          : "")
+      );
+    }
+    if (lines.length === 0) return "";
+    return [
+      "The client application provides tools beyond your built-in ones. They are invoked via a plain-text protocol: the client parses your reply and executes the tool on the user machine. To invoke one, reply with exactly one block of this shape:",
+      `<tool name="<tool_name>" nonce="${nonce}">`,
+      "<command>RAW TEXT, NO JSON, NO ESCAPING — quotes and newlines are fine</command>",
+      "<timeout>600</timeout> (only if the tool declares it)",
+      "</tool>",
+      "Only emit the <tool> block when you actually want to call the tool; otherwise answer normally. Include the secret nonce exactly.",
+      "",
+      "Available tools:",
+      ...lines,
+    ].join("\n");
+  }
 
   const lines = [];
   for (const t of tools) {
@@ -424,17 +546,25 @@ export function serializeToolsToPrompt(tools) {
  * (or null when there are none). `arguments` is always a JSON *string*, matching
  * the OpenAI API.
  */
+function isWholeJsonReply(text) {
+  const t = stripCodeFence(text).trim();
+  return t.startsWith("{") && t.endsWith("}");
+}
+
 export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
   const normalizedText = typeof text === "string" ? normalizeDsmlToolCalls(text) : text;
   const requestedToolNames = getRequestedToolNames(requestedTools);
+  const nonce = getToolNonce(requestedTools);
   if (
     typeof normalizedText !== "string" ||
-    (!normalizedText.includes("<tool>") && !normalizedText.includes("<tool_call"))
+    (!normalizedText.includes("<tool>") &&
+      !/<tool\s[^<>]*>/.test(normalizedText) &&
+      !normalizedText.includes("<tool_call") &&
+      !(nonce && (normalizedText.includes("_nonce") || isWholeJsonReply(normalizedText))))
   ) {
     return { content: text ?? "", toolCalls: null };
   }
 
-  const nonce = getToolNonce(requestedTools);
   const candidates = [];
 
   // Candidate extraction runs on the DSML-normalized text: normalizeDsmlToolCalls rewrites
@@ -451,12 +581,40 @@ export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
     });
   }
 
+  // Raw-field dialect blocks: <tool name=".." nonce=".."><command>..</command></tool>.
+  for (const block of findTagBlocks(normalizedText, TOOL_RAW_OPEN_RE, TOOL_RAW_CLOSE_RE)) {
+    const openTag = normalizedText.slice(block.start).match(/^<tool\s[^<>]*>/)?.[0] || "";
+    candidates.push({
+      raw: block.inner.trim(),
+      start: block.start,
+      end: block.end,
+      requireRequestedTool: true,
+      rawDialect: parseRawToolCall(block.inner, openTag),
+    });
+  }
+
+  // Some models (Gemini Web) answer the contract with the bare JSON object and
+  // drop the `<tool>` envelope. That shape is only accepted when it echoes the
+  // per-request nonce exactly — a bare JSON without it could be prose or a
+  // copy-attack, so it stays text.
+  if (nonce) {
+    const enveloped = candidates.map((c) => [c.start, c.end]);
+    for (const candidate of findBareJsonCandidates(normalizedText)) {
+      // A JSON body inside a `<tool>` envelope is already collected; adding it
+      // again would emit the same call twice.
+      if (enveloped.some(([s, e]) => candidate.start >= s && candidate.end <= e)) continue;
+      candidates.push({ ...candidate, requireNonce: true });
+    }
+  }
+
   candidates.sort((a, b) => a.start - b.start);
 
   const toolCalls = [];
   const acceptedRanges = [];
   for (const candidate of candidates) {
-    const parsed = parseLooseJsonObject(candidate.raw);
+    const parsed = candidate.rawDialect
+      ? candidate.rawDialect
+      : parseLooseJsonObject(candidate.raw) || parseToolEnvelopeLoose(candidate.raw);
     const emittedName =
       parsed && typeof parsed.name === "string"
         ? parsed.name
@@ -465,18 +623,32 @@ export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
           : null;
     if (!emittedName) continue;
 
+    // Raw dialect requires the exact nonce (shell execution is dangerous; the
+    // instruction tells the model to include it literally).
+    if (candidate.rawDialect) {
+      if (!nonce || candidate.rawDialect.nonce !== nonce) continue;
+    }
+
     // Nonce binding check: when the tool prompt embedded a nonce, check
     // that any _nonce present in the JSON body matches. A wrong nonce (present but
     // does not match) means this is a copy-attack or hallucination — treat it as text
     // instead of executing it. A missing _nonce is tolerated for backward compatibility
     // with models that do not (yet) follow the nonce instruction.
+    // Bare JSON needs the nonce, except when it IS the entire reply: Gemini
+    // Web often drops `_nonce`, and a reply that is nothing but one call to a
+    // requested tool is not prose quoting JSON. A wrong nonce is still rejected below.
+    const wholeReply = candidate.start === 0 && normalizedText.slice(candidate.end).trim() === "" &&
+      normalizedText.slice(0, candidate.start).trim() === "";
+    if (candidate.requireNonce && parsed?._nonce !== nonce && !(wholeReply && parsed?._nonce === undefined)) continue;
     if (nonce && parsed && parsed._nonce !== undefined && parsed._nonce !== nonce) continue;
 
     const name =
       resolveRequestedToolName(emittedName, requestedToolNames) ||
       (candidate.requireRequestedTool ? null : emittedName);
     if (!name || (candidate.requireRequestedTool && requestedToolNames.length === 0)) continue;
-    const args = toArgumentsString(parsed?.arguments);
+    const args = toArgumentsString(
+      candidate.rawDialect ? parsed.arguments : parsed?.arguments
+    );
     toolCalls.push({
       id: `${idSeed}_${toolCalls.length}`,
       type: "function",
@@ -525,12 +697,12 @@ function buildToolReminder(toolPrompt) {
  * to the tail of the system block) and a one-line reminder rides at the end of
  * the latest user message.
  */
-export function prepareToolMessages(bodyObj, messages) {
+export function prepareToolMessages(bodyObj, messages, opts) {
   const requestedTools = bodyObj.tools;
   const hasTools = Array.isArray(requestedTools) && requestedTools.length > 0;
   if (!hasTools) return { hasTools: false, requestedTools, effectiveMessages: messages };
 
-  const toolPrompt = serializeToolsToPrompt(requestedTools);
+  const toolPrompt = serializeToolsToPrompt(requestedTools, opts);
   if (!toolPrompt) return { hasTools: true, requestedTools, effectiveMessages: messages };
 
   const effectiveMessages = [...messages];

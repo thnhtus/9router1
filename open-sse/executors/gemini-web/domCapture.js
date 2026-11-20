@@ -17,19 +17,67 @@ const ASSISTANT_SELECTOR = "model-response, message-content";
 
 const READ_REPLY_STATE = `(() => {
   const msgs = [...document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)})];
-  const last = msgs.length ? (msgs[msgs.length - 1].innerText || '').trim() : '';
+  let last = '';
+  let generating = false;
+  if (msgs.length) {
+    // KaTeX renders formulas as per-glyph spans, so raw innerText explodes one
+    // character per line and duplicates the math when MathML + KaTeX both render.
+    // Swap each .katex for its LaTeX source (annotation) on a detached clone
+    // rendered offscreen, then read the text back — clone gets layout so
+    // innerText keeps paragraph breaks.
+    const clone = msgs[msgs.length - 1].cloneNode(true);
+    Array.from(clone.querySelectorAll('.katex')).forEach((k) => {
+      const tex = k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '';
+      k.replaceWith(document.createTextNode(tex ? ' $' + tex + '$ ' : ' ' + (k.textContent || '').trim() + ' '));
+    });
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-10000px;top:0;width:700px';
+    host.appendChild(clone);
+    document.body.appendChild(host);
+    last = (host.innerText || host.textContent || '').trim();
+    host.remove();
+  }
+  generating = !!document.querySelector('[data-test-id="thinking-overlay-content"], button[aria-label*="Stop" i]');
   return {
     count: msgs.length,
     lastText: last,
-    generating: !!document.querySelector('[data-test-id="thinking-overlay-content"], button[aria-label*="Stop" i]'),
+    generating,
   };
 })()`;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Gemini appends follow-up suggestion chips to the answer text. They have no
+// stable class we can rely on, so cut the trailing block: a heading line ending
+// with ':' or '?' that asks the reader to continue, followed only by short
+// title-like lines. Answers that merely contain a "Step 3:" heading keep their
+// body because the lines after it are prose, not short titles.
+const CHIP_HEADING = /\b(?:explore|verify|extend|generalize|test|practice|quiz|learn|check|try|compare|calculate)\b/i;
+
+function isChipTitle(line) {
+  const t = line.trim();
+  return t.length > 0 && t.length <= 110 && !/[.;:]$/.test(t);
+}
+
+export function cleanReplyText(text) {
+  const lines = (text || "").split("\n");
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const isHeading = line.length <= 110 && /[?:]$/.test(line) && CHIP_HEADING.test(line);
+    if (!isHeading) continue;
+    const tail = lines.slice(i + 1).map((l) => l.trim()).filter(Boolean);
+    if (tail.length >= 1 && tail.length <= 4 && tail.every(isChipTitle)) {
+      return lines.slice(0, i).join("\n").trim();
+    }
+  }
+  return (text || "").trim();
+}
+
 export async function readReplyState(page) {
   try {
-    return (await page.evaluate(READ_REPLY_STATE)) || { count: 0, lastText: "", generating: false };
+    const st = (await page.evaluate(READ_REPLY_STATE)) || { count: 0, lastText: "", generating: false };
+    return { ...st, lastText: cleanReplyText(st.lastText) };
   } catch {
     // Page navigating mid-poll — treat as "no change yet".
     return { count: 0, lastText: "", generating: false };

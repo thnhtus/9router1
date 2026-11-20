@@ -27,6 +27,8 @@ import {
   selectGeminiModel,
 } from "./gemini-web/modeSelection.js";
 import { readReplyState, waitForGeminiReply } from "./gemini-web/domCapture.js";
+import { prepareToolMessages } from "../translator/webTools.js";
+import { buildToolModeResponse } from "./chatgptWebTools.js";
 import { buildImagePrompt, waitForGeminiImage } from "./gemini-web/imageGen.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -59,6 +61,28 @@ function formatChatCompletion(content, model, finishReason = "stop") {
     choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: finishReason, logprobs: null }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   };
+}
+
+// Gemini sometimes answers agentic prompts with a canned "I'm having a hard
+// time fulfilling your request." instead of doing the work. It is transient:
+// re-sending the same prompt on the same page usually succeeds. Retry once only,
+// so a persistent refusal still reaches the client.
+export function isGeminiRefusal(text) {
+  return (
+    typeof text === "string" &&
+    text.length < 300 &&
+    /I'?m having a hard time fulfilling your request|I encountered an error doing what you asked/i.test(text)
+  );
+}
+
+async function retryGeminiReply(page, prompt, signal) {
+  const base = await readReplyState(page);
+  const inputEl = await waitForGeminiComposer(page);
+  await inputEl.click();
+  await page.keyboard.insertText(prompt);
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Enter");
+  return waitForGeminiReply({ page, baseCount: base.count, baseText: base.lastText, signal });
 }
 
 function formatStreamChunk(content, model, finishReason = null) {
@@ -132,6 +156,57 @@ export function buildGeminiPrompt(messages) {
   parts.push(`Previous conversation:\n${historyLines.join("\n\n")}`);
   parts.push(`Current user message:\n${lastUserContent}`);
   return parts.join("\n\n");
+}
+
+/**
+ * buildGeminiPrompt keeps only plain-text user/assistant/system turns, so a
+ * tool round-trip (assistant tool_calls + role:"tool" results) would vanish and
+ * the model would re-request the same tool. Rewrite those turns as text first:
+ * tool calls as the `<tool>` envelope, tool results as a user-role line.
+ */
+export function flattenToolHistory(messages) {
+  const names = new Map();
+  for (const m of messages) for (const c of m.tool_calls || []) names.set(c.id, c.function?.name);
+  return messages.map((m) => {
+    if (m.role === "tool") {
+      const name = names.get(m.tool_call_id) || m.name || "tool";
+      return { role: "user", content: `Tool result (${name}): ${m.content ?? "(no output)"}` };
+    }
+    if (m.role === "assistant" && m.tool_calls?.length) {
+      const calls = m.tool_calls.map((c) => {
+        const args = typeof c.function?.arguments === "string" ? c.function.arguments : JSON.stringify(c.function?.arguments ?? {});
+        return `<tool>{"name": ${JSON.stringify(c.function?.name)}, "arguments": ${args}}</tool>`;
+      });
+      return { role: "assistant", content: [m.content, ...calls].filter(Boolean).join("\n") };
+    }
+    return m;
+  });
+}
+
+/**
+ * Gemini Web answers tool-shaped questions with its OWN built-in widgets (live
+ * weather, search, maps) instead of the client's tools — observed live: "what's
+ * the weather in Tokyo" came back as a weather card with no tool call, while an
+ * explicit "use the get_weather tool" produced a correct call. Append a
+ * priority line to the shared contract so the client's tools win; the client's
+ * data is authoritative and the built-in widget bypasses it entirely.
+ */
+function withClientToolPriority(prepared) {
+  if (!prepared.hasTools) return prepared;
+  const effectiveMessages = [...prepared.effectiveMessages];
+  for (let i = effectiveMessages.length - 1; i >= 0; i--) {
+    if (effectiveMessages[i]?.role !== "system") continue;
+    effectiveMessages[i] = {
+      ...effectiveMessages[i],
+      content:
+        `${effectiveMessages[i].content}\n` +
+        "When a client tool above can answer the request, ALWAYS call it instead of using " +
+        "your own built-in widgets (weather, search, maps, calculator). Do not answer with a " +
+        "built-in widget result when a client tool covers the same data.",
+    };
+    break;
+  }
+  return { ...prepared, effectiveMessages };
 }
 
 const GEMINI_APP_ERROR_TEXT =
@@ -338,21 +413,10 @@ export class GeminiWebExecutor extends BaseExecutor {
   async execute({ model, body, stream, credentials, signal, log }) {
     const requestBody = body || {};
 
-    // The current Gemini web client is agentic: it only uses its own built-in
-    // tools (web search, weather, canvas …) and answers around prompt-level
-    // tool contracts instead of emitting calls — verified live across plausible
-    // and implausible tool shapes. Fail fast with a clean 400
-    // rather than a doomed emulation.
-    const requestedTools = requestBody.tools;
+    // Gemini Web has no native function calling. Tools are emulated with the
+    // shared `<tool>` prompt contract (translator/webTools.js) and parsed back
+    // from the reply text, the same path ChatGPT Web uses.
     const requestedFunctions = requestBody.functions;
-    if (requestedTools != null && (!Array.isArray(requestedTools) || requestedTools.length > 0)) {
-      return {
-        response: errorResponse(400, "Gemini Web does not support OpenAI function tools"),
-        url: GEMINI_URL,
-        headers: {},
-        transformedBody: body,
-      };
-    }
     if (requestedFunctions != null && (!Array.isArray(requestedFunctions) || requestedFunctions.length > 0)) {
       return {
         response: errorResponse(400, "Gemini Web does not support legacy function tools"),
@@ -382,7 +446,10 @@ export class GeminiWebExecutor extends BaseExecutor {
     // gemini-web is stateless (a fresh /app page per request), so the full
     // multi-turn history is flattened into the single prompt to preserve prior
     // context across turns.
-    const prompt = buildGeminiPrompt(messages);
+    const { hasTools, requestedTools: toolDefs, effectiveMessages } = withClientToolPriority(
+      prepareToolMessages(requestBody, flattenToolHistory(messages), { dialect: "raw" })
+    );
+    const prompt = buildGeminiPrompt(effectiveMessages);
 
     // A system-only request (no user message at all) must still 400 — since
     // the system text is prepended, `prompt` alone is no longer a reliable
@@ -511,6 +578,22 @@ export class GeminiWebExecutor extends BaseExecutor {
       // and those bodies can't be re-read via CDP once the stream completes.
       const baseReply = await readReplyState(page);
 
+      if (stream && hasTools) {
+        // Tool mode buffers the whole reply: the <tool> block can only be parsed once complete.
+        let responseText = await waitForGeminiReply({ page, baseCount: baseReply.count, baseText: baseReply.lastText, signal });
+        if (isGeminiRefusal(responseText)) responseText = await retryGeminiReply(page, prompt, signal);
+        return {
+          response: await buildToolModeResponse(
+            new Response(JSON.stringify(formatChatCompletion(responseText, modelId)), { status: 200, headers: { "Content-Type": "application/json" } }),
+            toolDefs,
+            true,
+            { idSeed: "gweb", cid: `chatcmpl-${Date.now()}`, created: Math.floor(Date.now() / 1000), model: modelId }
+          ),
+          url: GEMINI_URL,
+          headers: {},
+          transformedBody: body,
+        };
+      }
       if (stream) {
         const encoder = new TextEncoder();
         const streamPage = page;
@@ -567,17 +650,21 @@ export class GeminiWebExecutor extends BaseExecutor {
         };
       }
 
-      const responseText = await waitForGeminiReply({
+      let responseText = await waitForGeminiReply({
         page,
         baseCount: baseReply.count,
         baseText: baseReply.lastText,
         signal,
       });
+      if (isGeminiRefusal(responseText)) responseText = await retryGeminiReply(page, prompt, signal);
+      const jsonResponse = new Response(JSON.stringify(formatChatCompletion(responseText, modelId)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
       return {
-        response: new Response(JSON.stringify(formatChatCompletion(responseText, modelId)), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+        response: hasTools
+          ? await buildToolModeResponse(jsonResponse, toolDefs, false, { idSeed: "gweb" })
+          : jsonResponse,
         url: GEMINI_URL,
         headers: {},
         transformedBody: body,
