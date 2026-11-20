@@ -114,6 +114,7 @@ export default function PiInventoryCards() {
   }, []);
 
   const mcpServers = data?.mcpServers || [];
+  const mcpRequestTotals = data?.mcpCallTotals || {};
   const duplicates = data?.duplicates || {};
   const sameNameRoots = new Map((duplicates.sameName || []).map((g) => [g.name, g.roots]));
   const closeWith = duplicates.closeWith || {};
@@ -255,7 +256,7 @@ export default function PiInventoryCards() {
         </div>
       </Card>
       <SkillPickStats />
-      {mcpServers.length > 0 && <McpStats servers={mcpServers} />}
+      {mcpServers.length > 0 && <McpStats servers={mcpServers} requests={mcpRequestTotals} />}
       <Card
         padding="none"
         title="Pi MCP servers"

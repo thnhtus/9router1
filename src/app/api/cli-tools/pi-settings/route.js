@@ -10,6 +10,7 @@ import { promisify } from "util";
 import { scoreSkill } from "@/shared/utils/skillScore";
 import { findDuplicateSkills } from "@/shared/utils/skillDuplicates";
 import { skillCategory, mcpCategory } from "@/lib/piSkills.js";
+import { mcpCallsByServer } from "@/lib/db/repos/mcpCallRepo.js";
 
 const execAsync = promisify(exec);
 
@@ -231,6 +232,7 @@ export async function GET() {
       configPath,
       mcpPath: getMcpPath(),
       mcpServers: await summarizeServers(mcpServers),
+      mcpCallTotals: await mcpCallsByServer(24 * 30).catch(() => ({})),
       exaMcpEnabled: !!mcpServers?.exa,
       skills,
       duplicates: {

@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -219,6 +219,18 @@ export const TABLES = {
       ponytail: "INTEGER NOT NULL DEFAULT 0",
     },
     primaryKey: "PRIMARY KEY (hour, level)",
+  },
+  // Hourly MCP tool-call counters, counted from tool_use/tool_calls in model responses
+  // (9router proxy sees model output, not Pi-side execution). Kept forever (small rows).
+  // tool = '' on the rollup row that carries per-server call totals.
+  mcpCallHourly: {
+    columns: {
+      hour: "TEXT NOT NULL", // ISO, truncated to the hour (UTC)
+      server: "TEXT NOT NULL",
+      tool: "TEXT NOT NULL DEFAULT ''",
+      calls: "INTEGER NOT NULL DEFAULT 0",
+    },
+    primaryKey: "PRIMARY KEY (hour, server, tool)",
   },
   // PXPIPE compression events (was DATA_DIR/pxpipe/events.jsonl), capped in src/lib/pxpipe/events.js.
   pxpipeEvents: {
