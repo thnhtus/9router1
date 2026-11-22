@@ -85,8 +85,8 @@ describe("request details — tab crash-risk cases", () => {
   });
 
   it("oversized field → stored truncated + reparseable (no circular)", async () => {
-    // Default per-field cap is 1MB; exceed it to exercise the truncation path.
-    const huge = "x".repeat(2 * 1024 * 1024);
+    // Default per-field cap is 4MB; exceed it to exercise the truncation path.
+    const huge = "x".repeat(5 * 1024 * 1024);
     await saveDetail({
       id: "trunc-1", provider: "openai", model: "gpt-4",
       status: "ok", tokens: {},

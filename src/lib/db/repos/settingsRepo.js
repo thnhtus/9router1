@@ -46,7 +46,7 @@ const DEFAULT_SETTINGS = {
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
   // Per-field cap in KB; larger payloads are stored truncated (see requestDetailsRepo truncateField).
-  observabilityMaxJsonSize: 1024,
+  observabilityMaxJsonSize: 4096,
   outboundProxyEnabled: false,
   outboundProxyUrl: "",
   outboundNoProxy: "",

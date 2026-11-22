@@ -25,7 +25,7 @@ describe("GET /api/usage/request-details/[id]", () => {
     expect((await res.json()).error).toBe("Request detail not found");
   });
 
-  it("default per-field payload cap is 1 MB so full bodies are stored", () => {
-    expect(mergeWithDefaults({}).observabilityMaxJsonSize).toBe(1024);
+  it("default per-field payload cap is 4 MB so full bodies are stored", () => {
+    expect(mergeWithDefaults({}).observabilityMaxJsonSize).toBe(4096);
   });
 });
