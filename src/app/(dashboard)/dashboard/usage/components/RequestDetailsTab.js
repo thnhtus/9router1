@@ -7,6 +7,7 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { Spinner } from "@/shared/components/Loading";
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -82,6 +83,18 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
   );
 }
 
+function PayloadSection({ title, icon, data, defaultOpen = false, show = true }) {
+  if (!show) return null;
+  const content = typeof data === "object" ? JSON.stringify(data, null, 2) : data;
+  return (
+    <CollapsibleSection title={title} defaultOpen={defaultOpen} icon={icon}>
+      <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
+        {content ?? "[No content]"}
+      </pre>
+    </CollapsibleSection>
+  );
+}
+
 function getCachedTokens(tokens) {
   return tokens?.cached_tokens || tokens?.cache_read_input_tokens || 0;
 }
@@ -107,8 +120,10 @@ export default function RequestDetailsTab() {
     totalItems: 0,
     totalPages: 0
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
@@ -118,53 +133,78 @@ export default function RequestDetailsTab() {
     endDate: ""
   });
 
-  const fetchProviders = useCallback(async () => {
-    try {
-      const res = await fetch("/api/usage/providers");
-      const data = await res.json();
-      setProviders(data.providers || []);
+  useEffect(() => {
+    let active = true;
+    async function loadProviders() {
+      try {
+        const res = await fetch("/api/usage/providers");
+        const data = await res.json();
+        if (!active) return;
+        setProviders(data.providers || []);
 
-      const cache = await fetchProviderNames();
-      setProviderNameCache(cache.providerNameCache);
-    } catch (error) {
-      console.error("Failed to fetch providers:", error);
+        const cache = await fetchProviderNames();
+        if (!active) return;
+        setProviderNameCache(cache.providerNameCache);
+      } catch (error) {
+        console.error("Failed to fetch providers:", error);
+      }
     }
+    loadProviders();
+    return () => { active = false; };
   }, []);
 
-  const fetchDetails = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        pageSize: pagination.pageSize.toString()
-      });
-      if (filters.provider) params.append("provider", filters.provider);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
+  useEffect(() => {
+    let active = true;
+    async function loadDetails() {
+      try {
+        const params = new URLSearchParams({
+          page: pagination.page.toString(),
+          pageSize: pagination.pageSize.toString()
+        });
+        if (filters.provider) params.append("provider", filters.provider);
+        if (filters.startDate) params.append("startDate", filters.startDate);
+        if (filters.endDate) params.append("endDate", filters.endDate);
 
-      const res = await fetch(`/api/usage/request-details?${params}`);
-      const data = await res.json();
+        const res = await fetch(`/api/usage/request-details?${params}`);
+        const data = await res.json();
+        if (!active) return;
 
-      setDetails(data.details || []);
-      setPagination(prev => ({ ...prev, ...data.pagination }));
-    } catch (error) {
-      console.error("Failed to fetch request details:", error);
-    } finally {
-      setLoading(false);
+        setDetails(data.details || []);
+        setPagination(prev => ({ ...prev, ...data.pagination }));
+      } catch (error) {
+        console.error("Failed to fetch request details:", error);
+      } finally {
+        if (active) setLoading(false);
+      }
     }
+    loadDetails();
+    return () => { active = false; };
   }, [pagination.page, pagination.pageSize, filters]);
 
-  useEffect(() => {
-    fetchProviders();
-  }, [fetchProviders]);
-
-  useEffect(() => {
-    fetchDetails();
-  }, [fetchDetails]);
-
-  const handleViewDetail = (detail) => {
-    setSelectedDetail(detail);
+  const handleViewDetail = async (detail) => {
+    setSelectedDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
     setIsDrawerOpen(true);
+    try {
+      const res = await fetch(`/api/usage/request-details/${encodeURIComponent(detail.id)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setDetailError(data.error || "Failed to load full request/response payload");
+      } else {
+        setSelectedDetail(data.detail);
+      }
+    } catch {
+      setDetailError("Failed to load full request/response payload");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
+    setSelectedDetail(null);
+    setDetailError(null);
   };
 
   const handlePageChange = (newPage) => {
@@ -260,13 +300,12 @@ export default function RequestDetailsTab() {
                 <th scope="col" className="whitespace-nowrap px-4 py-2 text-right text-[13px] font-medium text-muted-foreground">Cache Creation</th>
                 <th scope="col" className="whitespace-nowrap px-4 py-2 text-right text-[13px] font-medium text-muted-foreground">Output Tokens</th>
                 <th scope="col" className="whitespace-nowrap px-4 py-2 text-left text-[13px] font-medium text-muted-foreground">Latency</th>
-                <th scope="col" className="whitespace-nowrap px-4 py-2 text-center text-[13px] font-medium text-muted-foreground">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-sm text-center text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-12 text-sm text-center text-muted-foreground">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin motion-reduce:animate-none text-[20px]">progress_activity</span>
                       Loading...
@@ -275,7 +314,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-sm text-center text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-12 text-sm text-center text-muted-foreground">
                     No requests match these filters
                   </td>
                 </tr>
@@ -283,7 +322,16 @@ export default function RequestDetailsTab() {
                 details.map((detail, index) => (
                   <tr
                     key={`${detail.id}-${index}`}
-                    className="border-b border-border last:border-b-0 hover:bg-muted/40"
+                    tabIndex={0}
+                    onClick={() => handleViewDetail(detail)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleViewDetail(detail);
+                      }
+                    }}
+                    aria-label={`View request detail: ${detail.model}, ${new Date(detail.timestamp).toLocaleString()}`}
+                    className="cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/50"
                   >
                     <td className="whitespace-nowrap px-4 py-2.5 text-sm text-foreground">
                       {new Date(detail.timestamp).toLocaleString()}
@@ -314,16 +362,6 @@ export default function RequestDetailsTab() {
                         <div>Total <span className="text-foreground">{detail.latency?.total || 0}ms</span></div>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-center">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleViewDetail(detail)}
-                        aria-label={`Detail: ${detail.model}, ${new Date(detail.timestamp).toLocaleString()}`}
-                      >
-                        Detail
-                      </Button>
-                    </td>
                   </tr>
                 ))
               )}
@@ -346,11 +384,22 @@ export default function RequestDetailsTab() {
 
       <Drawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={closeDrawer}
         title="Request Details"
         width="lg"
       >
-        {selectedDetail && (
+        {detailLoading && (
+          <div className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
+            <Spinner className="size-5" />
+            Loading full request/response payload...
+          </div>
+        )}
+        {!detailLoading && detailError && (
+          <div className="rounded-lg border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
+            {detailError}
+          </div>
+        )}
+        {!detailLoading && !detailError && selectedDetail && (
           <div className="space-y-6">
             <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
               <div>
@@ -414,7 +463,7 @@ export default function RequestDetailsTab() {
               </div>
             </div>
 
-            {selectedDetail.pxpipe && (
+            {selectedDetail?.pxpipe && (
               <div className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="material-symbols-outlined text-[18px] text-muted-foreground">image</span>
@@ -457,51 +506,52 @@ export default function RequestDetailsTab() {
             )}
 
             <div className="space-y-4">
-              <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
-                  {JSON.stringify(selectedDetail.request, null, 2)}
-                </pre>
-              </CollapsibleSection>
+              <PayloadSection
+                title="1. Client Request (Input)"
+                icon="input"
+                data={selectedDetail?.request}
+                defaultOpen={true}
+              />
 
-              {selectedDetail.providerRequest && (
-                <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
+              <PayloadSection
+                title="2. Provider Request (Translated)"
+                icon="translate"
+                data={selectedDetail?.providerRequest}
+                show={selectedDetail?.providerRequest}
+              />
+
+              <PayloadSection
+                title="3. Provider Response (Raw)"
+                icon="data_object"
+                data={selectedDetail?.providerResponse}
+                show={selectedDetail?.providerResponse}
+              />
+
+              <div>
+                <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
+                  {selectedDetail?.response?.thinking && (
+                    <div className="mb-4">
+                      <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
+                        <span className="material-symbols-outlined text-[16px]">psychology</span>
+                        Thinking Process
+                      </h4>
+                      <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-warning/30 bg-warning/10 p-3 font-mono text-xs text-foreground sm:p-4">
+                        {selectedDetail.response.thinking}
+                      </pre>
+                    </div>
+                  )}
+                  
+                  <h4 className="font-semibold text-foreground mb-2 text-xs uppercase tracking-wide opacity-70">
+                    Content
+                  </h4>
                   <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
-                    {JSON.stringify(selectedDetail.providerRequest, null, 2)}
+                    {selectedDetail?.response?.content
+                      || (selectedDetail?.response && Object.keys(selectedDetail.response).length > 0
+                        ? JSON.stringify(selectedDetail.response, null, 2)
+                        : "[No content]")}
                   </pre>
                 </CollapsibleSection>
-              )}
-
-              {selectedDetail.providerResponse && (
-                <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
-                    {typeof selectedDetail.providerResponse === 'object'
-                      ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                      : selectedDetail.providerResponse
-                    }
-                  </pre>
-                </CollapsibleSection>
-              )}
-              
-              <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
-                {selectedDetail.response?.thinking && (
-                  <div className="mb-4">
-                    <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
-                      <span className="material-symbols-outlined text-[16px]">psychology</span>
-                      Thinking Process
-                    </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-warning/30 bg-warning/10 p-3 font-mono text-xs text-foreground sm:p-4">
-                      {selectedDetail.response.thinking}
-                    </pre>
-                  </div>
-                )}
-                
-                <h4 className="font-semibold text-foreground mb-2 text-xs uppercase tracking-wide opacity-70">
-                  Content
-                </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs text-foreground sm:p-4">
-                  {selectedDetail.response?.content || "[No content]"}
-                </pre>
-              </CollapsibleSection>
+              </div>
             </div>
           </div>
         )}
