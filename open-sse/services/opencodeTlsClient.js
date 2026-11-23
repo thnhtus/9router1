@@ -35,8 +35,6 @@ const OPENCODE_CIPHER_LIST = [
   "AES256-SHA",
 ].join(":");
 
-const DEFAULT_TIMEOUT_MS = 120000;
-
 let sessionPromise = null;
 
 export class OpencodeTlsUnavailableError extends Error {
@@ -55,6 +53,7 @@ async function loadSession() {
       }
       return wreq.createSession({
         emulation: { tlsOptions: { cipherList: OPENCODE_CIPHER_LIST } },
+        poolIdleTimeout: 5000,
       });
     })().catch((error) => {
       sessionPromise = null;
@@ -78,7 +77,7 @@ export function resetOpencodeTlsSession() {
  * Streaming is preserved: the response body is handed over as the live
  * ReadableStream, never buffered.
  */
-export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = 0 } = {}) {
   let session;
   try {
     session = await loadSession();
@@ -88,6 +87,9 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
     );
   }
 
+  // No total-request timeout by default: 0 means unlimited in wreq-js, so a long
+  // streaming body is never killed mid-flight (connect stalling is handled by the
+  // executor's FETCH_CONNECT_TIMEOUT_MS, stream stalls by STREAM_STALL_TIMEOUT_MS).
   const options = {
     method: init.method || "GET",
     headers: init.headers,
@@ -97,7 +99,27 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
   if (init.body !== undefined) options.body = init.body;
   if (signal) options.signal = signal;
 
-  const res = await session.fetch(url, options);
+  const callerAborted = !!signal?.aborted;
+  let res = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      // Dial a brand-new TLS/H2 connection: the previous one is suspect.
+      session = await loadSession();
+    }
+    try {
+      res = await session.fetch(url, options);
+      break;
+    } catch (error) {
+      // A caller-initiated abort is not a transport fault — never reset or retry it.
+      if (callerAborted || signal?.aborted) throw error;
+      // HTTP/2 stream errors ("unspecific protocol error detected") and connect
+      // timeouts leave the pooled connection poisoned, so every later request
+      // reuses it and fails the same way. Drop the session; loadSession() above
+      // then builds a fresh one for the retry.
+      resetOpencodeTlsSession();
+      if (attempt === 1) throw error;
+    }
+  }
   const headers = {};
   res.headers?.forEach?.((value, key) => {
     headers[key] = value;

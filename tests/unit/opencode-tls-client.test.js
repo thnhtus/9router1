@@ -63,6 +63,54 @@ describe("opencodeTlsClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("drops the pooled session after a transport error and retries on a fresh one", async () => {
+    const ok = new Response("ok", { status: 200 });
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("http2 error: stream error received: unspecific protocol error detected"))
+      .mockResolvedValueOnce(ok);
+    const closeMock = vi.fn().mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue({ fetch: fetchMock, close: closeMock });
+
+    const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+    const result = await opencodeTlsFetch("https://opencode.ai/a", {});
+
+    expect(result.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The poisoned session is closed and a second, fresh session is created.
+    expect(createSessionMock).toHaveBeenCalledTimes(2);
+    expect(closeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the transport error once the fresh-session retry also fails", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("http2 error: stream error"));
+    const closeMock = vi.fn().mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue({ fetch: fetchMock, close: closeMock });
+
+    const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+
+    await expect(opencodeTlsFetch("https://opencode.ai/a", {})).rejects.toThrow(/http2 error/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(createSessionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry or reset the session when the caller aborts", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("aborted"));
+    const closeMock = vi.fn().mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue({ fetch: fetchMock, close: closeMock });
+
+    const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      opencodeTlsFetch("https://opencode.ai/a", {}, { signal: controller.signal })
+    ).rejects.toThrow(/aborted/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(createSessionMock).toHaveBeenCalledTimes(1);
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
   it("surfaces an actionable error when wreq-js is unavailable", async () => {
     loadRuntimeDepMock.mockRejectedValue(new Error("MODULE_NOT_FOUND"));
 
