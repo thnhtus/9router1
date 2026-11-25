@@ -27,7 +27,7 @@ import {
   selectGeminiModel,
 } from "./gemini-web/modeSelection.js";
 import { readReplyState, waitForGeminiReply } from "./gemini-web/domCapture.js";
-import { prepareToolMessages } from "../translator/webTools.js";
+import { parseToolCallsFromText, prepareToolMessages } from "../translator/webTools.js";
 import { buildToolModeResponse } from "./chatgptWebTools.js";
 import { buildImagePrompt, waitForGeminiImage } from "./gemini-web/imageGen.js";
 
@@ -83,6 +83,22 @@ async function retryGeminiReply(page, prompt, signal) {
   await page.waitForTimeout(300);
   await page.keyboard.press("Enter");
   return waitForGeminiReply({ page, baseCount: base.count, baseText: base.lastText, signal });
+}
+
+// One automatic retry when the reply is a refusal, or carries a malformed or
+// unfinished <tool> block that would otherwise leak raw markup to the user.
+// Gemini Web is stateless per request, so re-asking on the same page is cheap.
+const MALFORMED_TOOL_RETRY =
+  "Your previous reply contained a malformed or unfinished tool call and was discarded. " +
+  "Answer the last request again: either emit one complete tool block with the exact nonce, " +
+  "or answer in plain text with no tool block.";
+
+async function settleGeminiReply(page, prompt, responseText, toolDefs, signal) {
+  if (isGeminiRefusal(responseText)) return retryGeminiReply(page, prompt, signal);
+  if (!toolDefs?.length) return responseText;
+  const parsed = parseToolCallsFromText(responseText, "gweb", toolDefs);
+  if (!parsed.invalidToolCall && !parsed.incomplete) return responseText;
+  return retryGeminiReply(page, prompt + "\n\n" + MALFORMED_TOOL_RETRY, signal);
 }
 
 function formatStreamChunk(content, model, finishReason = null) {
@@ -581,7 +597,7 @@ export class GeminiWebExecutor extends BaseExecutor {
       if (stream && hasTools) {
         // Tool mode buffers the whole reply: the <tool> block can only be parsed once complete.
         let responseText = await waitForGeminiReply({ page, baseCount: baseReply.count, baseText: baseReply.lastText, signal });
-        if (isGeminiRefusal(responseText)) responseText = await retryGeminiReply(page, prompt, signal);
+        responseText = await settleGeminiReply(page, prompt, responseText, toolDefs, signal);
         return {
           response: await buildToolModeResponse(
             new Response(JSON.stringify(formatChatCompletion(responseText, modelId)), { status: 200, headers: { "Content-Type": "application/json" } }),
@@ -656,7 +672,7 @@ export class GeminiWebExecutor extends BaseExecutor {
         baseText: baseReply.lastText,
         signal,
       });
-      if (isGeminiRefusal(responseText)) responseText = await retryGeminiReply(page, prompt, signal);
+      responseText = await settleGeminiReply(page, prompt, responseText, toolDefs, signal);
       const jsonResponse = new Response(JSON.stringify(formatChatCompletion(responseText, modelId)), {
         status: 200,
         headers: { "Content-Type": "application/json" },

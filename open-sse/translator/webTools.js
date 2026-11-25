@@ -578,6 +578,7 @@ export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
       start: block.start,
       end: block.end,
       requireRequestedTool: false,
+      isEnvelope: true,
     });
   }
 
@@ -590,6 +591,7 @@ export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
       end: block.end,
       requireRequestedTool: true,
       rawDialect: parseRawToolCall(block.inner, openTag),
+      isEnvelope: true,
     });
   }
 
@@ -611,6 +613,7 @@ export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
 
   const toolCalls = [];
   const acceptedRanges = [];
+  const allEnvelopeRanges = candidates.filter((c) => c.isEnvelope).map(({ start, end }) => ({ start, end }));
   for (const candidate of candidates) {
     const parsed = candidate.rawDialect
       ? candidate.rawDialect
@@ -657,12 +660,44 @@ export function parseToolCallsFromText(text, idSeed = "call", requestedTools) {
     acceptedRanges.push({ start: candidate.start, end: candidate.end });
   }
 
-  if (toolCalls.length === 0) {
-    return { content: text, toolCalls: null };
+  // Incomplete trailing envelope (model stopped mid-block): strip it and flag.
+  let incomplete = false;
+  const openMatches = [...normalizedText.matchAll(/<tool(?:\s[^<>]*)?>|<tool_call(?:\s[^<>]*)?>/g)];
+  const lastOpen = openMatches.length ? openMatches[openMatches.length - 1] : null;
+  if (lastOpen) {
+    const afterOpen = normalizedText.slice(lastOpen.index + lastOpen[0].length);
+    if (!/<\/tool>|<\/tool_call>/.test(afterOpen)) {
+      incomplete = true;
+      allEnvelopeRanges.push({ start: lastOpen.index, end: normalizedText.length });
+    }
   }
 
-  const content = stripRanges(normalizedText, acceptedRanges);
-  return { content, toolCalls };
+  const rejectedRanges = allEnvelopeRanges.filter(
+    (r) => !acceptedRanges.some((a) => a.start === r.start && a.end === r.end)
+  );
+  const hadToolBlock = allEnvelopeRanges.length > 0;
+
+  if (toolCalls.length === 0) {
+    // A Gemini-style tool envelope that failed validation is protocol debris,
+    // not useful assistant prose. Leave a signal for the executor to continue.
+    const invalidRanges = candidates
+      .filter((candidate) => candidate.isEnvelope)
+      .map(({ start, end }) => ({ start, end }));
+    if (invalidRanges.length > 0 || incomplete) {
+      const ranges = invalidRanges.length > 0 ? invalidRanges : allEnvelopeRanges;
+      return {
+        content: stripRanges(normalizedText, ranges),
+        toolCalls: null,
+        invalidToolCall: true,
+        incomplete,
+        hadToolBlock: true,
+      };
+    }
+    return { content: text, toolCalls: null, incomplete: false, hadToolBlock };
+  }
+
+  const content = stripRanges(normalizedText, [...acceptedRanges, ...rejectedRanges]);
+  return { content, toolCalls, incomplete, hadToolBlock };
 }
 
 // ── Shared helpers for web-cookie executors ────────────────────────────────

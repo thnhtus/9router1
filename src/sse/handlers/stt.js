@@ -5,6 +5,7 @@ import {
 import { getSettings, getCustomModels } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { enforceKeyLimitsForRequest } from "../services/keyLimits.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -68,6 +69,9 @@ export async function handleStt(request) {
   // Per-key access control: checked before any credential lookup.
   const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
   if (keyAccessDenied) return keyAccessDenied;
+  // Per-key rate limit / budget (429 / 402); no-op without a key or limits.
+  const keyLimitDenied = await enforceKeyLimitsForRequest(request);
+  if (keyLimitDenied) return keyLimitDenied;
 
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 

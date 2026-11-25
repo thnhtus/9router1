@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
+import { validateKeyLimitsInput } from "@/shared/utils/keyLimits.js";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 export const dynamic = "force-dynamic";
@@ -19,21 +20,28 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name } = body;
+    const { name, limits } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
+    let checkedLimits = null;
+    if (limits !== undefined) {
+      const checked = validateKeyLimitsInput(limits);
+      if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      checkedLimits = checked.value;
+    }
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
+    const apiKey = await createApiKey(name, machineId, checkedLimits);
 
     return NextResponse.json({
       key: apiKey.key,
       name: apiKey.name,
       id: apiKey.id,
       machineId: apiKey.machineId,
+      limits: apiKey.limits,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);

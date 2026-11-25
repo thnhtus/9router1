@@ -47,6 +47,46 @@ describe("cleanReplyText", () => {
     expect(cleanReplyText(raw)).toBe("4");
   });
 
+  it("drops a live 'Want to see ...?' chip with a Yes/No option", () => {
+    const raw = [
+      "Oxygen: Released back into the air—the exact gas you breathe in every second.",
+      "",
+      "Want to see the simple science recipe behind photosynthesis?",
+      "Yes",
+    ].join("\n");
+    expect(cleanReplyText(raw)).toBe(
+      "Oxygen: Released back into the air—the exact gas you breathe in every second."
+    );
+  });
+
+  it("drops a trailing question heading even when it has no known chip keyword", () => {
+    const raw = [
+      "A hash table maps keys to values with average O(1) lookup.",
+      "",
+      "Curious how collisions are handled?",
+      "Show probing",
+      "Show chaining",
+    ].join("\n");
+    expect(cleanReplyText(raw)).toBe("A hash table maps keys to values with average O(1) lookup.");
+  });
+
+  it("keeps a question heading when the lines below it are prose, not chip titles", () => {
+    const raw = [
+      "So what is a BST?",
+      "A binary search tree stores keys in sorted order.",
+    ].join("\n");
+    expect(cleanReplyText(raw)).toBe(raw);
+  });
+
+  it("keeps a plain visual list without a chip heading", () => {
+    const raw = [
+      "Key requirements:",
+      "Hashable keys for a hash table",
+      "Comparable keys for a BST",
+    ].join("\n");
+    expect(cleanReplyText(raw)).toBe(raw);
+  });
+
   it("keeps structured answers whose numbered headings are prose", () => {
     const raw = [
       "Step 3:",

@@ -29,6 +29,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
+import { enforceKeyLimitsForRequest } from "../services/keyLimits.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
 import { getRoutingProfiles, getModelTiers } from "@/lib/llmStats.js";
 import { augmentModelsWithSmartPool } from "open-sse/services/smartAutoPool.js";
@@ -149,6 +150,9 @@ async function handleChatInner(request, clientRawRequest = null) {
   const keyAccess = await getKeyAccessContext(request);
   const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
+  // Per-key rate limit / budget (429 / 402); no-op without a key or limits.
+  const keyLimitDenied = await enforceKeyLimitsForRequest(request);
+  if (keyLimitDenied) return keyLimitDenied;
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";

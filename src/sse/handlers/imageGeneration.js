@@ -8,6 +8,7 @@ import {
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import { enforceKeyLimitsForRequest } from "../services/keyLimits.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { getImageAdapter } from "open-sse/handlers/imageProviders/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -72,6 +73,9 @@ export async function handleImageGeneration(request) {
   // Per-key access control: requested target, before combo expansion.
   const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
   if (keyAccessDenied) return keyAccessDenied;
+  // Per-key rate limit / budget (429 / 402); no-op without a key or limits.
+  const keyLimitDenied = await enforceKeyLimitsForRequest(request);
+  if (keyLimitDenied) return keyLimitDenied;
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);

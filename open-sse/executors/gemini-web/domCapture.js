@@ -52,7 +52,13 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // with ':' or '?' that asks the reader to continue, followed only by short
 // title-like lines. Answers that merely contain a "Step 3:" heading keep their
 // body because the lines after it are prose, not short titles.
-const CHIP_HEADING = /\b(?:explore|verify|extend|generalize|test|practice|quiz|learn|check|try|compare|calculate)\b/i;
+// Chip headings are short prompts that end in "?" (e.g. "Want to see the simple
+// science recipe behind photosynthesis?") or ":" (e.g. "Explore related...:").
+// A "?" heading is treated as a chip prompt structurally — Gemini only emits
+// these as trailing suggestion chips, and requiring a keyword misses novel
+// phrasings (e.g. "Want to see...?"). A ":" heading still needs a chip-like
+// keyword so ordinary section labels ("Step 3:", "Note:") are not stripped.
+const CHIP_HEADING_KEYWORDS = /\b(?:want|see|show|know|learn|explore|verify|extend|generalize|test|practice|quiz|check|try|compare|calculate|more|deeper|further|related|continue|next|also|another)\b/i;
 
 function isChipTitle(line) {
   const t = line.trim();
@@ -64,8 +70,11 @@ export function cleanReplyText(text) {
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i].trim();
     if (!line) continue;
-    const isHeading = line.length <= 110 && /[?:]$/.test(line) && CHIP_HEADING.test(line);
-    if (!isHeading) continue;
+    const isQuestion = line.endsWith("?");
+    const isColon = line.endsWith(":");
+    if (!isQuestion && !isColon) continue;
+    if (line.length > 110) continue;
+    if (isColon && !CHIP_HEADING_KEYWORDS.test(line)) continue;
     const tail = lines.slice(i + 1).map((l) => l.trim()).filter(Boolean);
     if (tail.length >= 1 && tail.length <= 4 && tail.every(isChipTitle)) {
       return lines.slice(0, i).join("\n").trim();

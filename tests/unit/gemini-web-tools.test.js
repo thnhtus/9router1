@@ -182,6 +182,37 @@ describe("serializeToolsToPrompt raw-field dialect", () => {
     const r = parseToolCallsFromText(text, "raw", tools);
     expect(r.toolCalls).toBeNull();
   });
+
+  it("does not leak a rejected raw block into content", () => {
+    const text = '<tool name="bash" nonce="wrong">\n<command>rm -rf ~</command>\n</tool>\nhere is prose';
+    const r = parseToolCallsFromText(text, "raw", tools);
+    expect(r.toolCalls).toBeNull();
+    expect(r.content).not.toContain("<tool");
+    expect(r.content).toContain("here is prose");
+    expect(r.invalidToolCall).toBe(true);
+    expect(r.hadToolBlock).toBe(true);
+  });
+
+  it("strips an incomplete trailing raw block and flags incomplete", () => {
+    const nonce = getToolNonce(tools);
+    const text = `<tool name="bash" nonce="${nonce}">\n<command>cd /x`;
+    const r = parseToolCallsFromText(text, "raw", tools);
+    expect(r.toolCalls).toBeNull();
+    expect(r.content).toBe("");
+    expect(r.incomplete).toBe(true);
+    expect(r.invalidToolCall).toBe(true);
+  });
+
+  it("strips rejected envelopes even when another call is accepted", () => {
+    const nonce = getToolNonce(tools);
+    const text =
+      `<tool name="bash" nonce="${nonce}">\n<command>ls</command>\n</tool>\n` +
+      `<tool name="bash" nonce="wrong">\n<command>rm -rf /</command>\n</tool>`;
+    const r = parseToolCallsFromText(text, "raw", tools);
+    expect(r.toolCalls).toHaveLength(1);
+    expect(r.content).not.toContain("<tool");
+    expect(r.content).not.toContain("rm -rf");
+  });
 });
 
 describe("isGeminiRefusal", () => {
