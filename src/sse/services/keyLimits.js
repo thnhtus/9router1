@@ -51,17 +51,17 @@ export async function readKeyUsage(apiKey, periodStart) {
 
 async function cachedUsage(key, limits, now) {
   const periodStart = budgetPeriodStart(limits.period, new Date(now));
-  const cacheKey = `${key.id}|${periodStart}`;
+  const cacheKey = `${key.keyId}|${periodStart}`;
   const hit = state.usage.get(cacheKey);
   if (hit && now - hit.ts < USAGE_CACHE_TTL_MS) return { ...hit, periodStart };
   try {
-    const fresh = await readKeyUsage(key.key, periodStart);
+    const fresh = await readKeyUsage(key.apiKey, periodStart);
     // usageHistory rows land just after the response finishes, so a cached total
     // is always slightly BEHIND reality; that is the safe direction for a budget.
     state.usage.set(cacheKey, { ...fresh, ts: now });
     return { ...fresh, periodStart };
   } catch (e) {
-    log.warn("AUTH", `key-limits: usage read failed for "${key.name || key.id}": ${e.message}`);
+    log.warn("AUTH", `key-limits: usage read failed for "${key.keyName}": ${e.message}`);
     return null; // fail open
   }
 }

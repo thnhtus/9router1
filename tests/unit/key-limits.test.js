@@ -5,6 +5,7 @@ const fx = vi.hoisted(() => ({
   keys: {}, // apiKey string -> db row
   usage: { requests: 0, tokens: 0, cost: 0 },
   adapterError: false,
+  byKey: null, // apiKey -> usage; the real DB sums per presented key
 }));
 
 vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({
@@ -12,8 +13,9 @@ vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({
 }));
 vi.mock("@/lib/db/driver.js", () => ({
   getAdapter: async () => ({
-    get: () => {
+    get: (_sql, params) => {
       if (fx.adapterError) throw new Error("db down");
+      if (fx.byKey) return fx.byKey[params?.[0]] || { requests: 0, tokens: 0, cost: 0 };
       return fx.usage;
     },
   }),
@@ -45,6 +47,7 @@ beforeEach(() => {
   fx.keys = {};
   fx.usage = { requests: 0, tokens: 0, cost: 0 };
   fx.adapterError = false;
+  fx.byKey = null;
   engine.__resetKeyLimitState();
 });
 
@@ -126,6 +129,16 @@ describe("budget (tokens / cost)", () => {
     fx.usage = { requests: 1, tokens: 10, cost: 0.1 };
     const ctx = await engine.getKeyLimitsContext(req("sk-u"));
     expect(await engine.enforceKeyLimits(ctx)).toBeNull();
+  });
+});
+
+describe("budget uses the presented key's usage (regression)", () => {
+  // ponytail: covers only the cachedUsage ctx-shape bug; full DB path lives in zz-readusage (scratch).
+  it("402 when the real key's usage exceeds the budget", async () => {
+    fx.keys["sk-b"] = makeKey({ key: "sk-b", limits: { rpm: 0, tokens: 100, cost: 0, period: "daily" } });
+    fx.byKey = { "sk-b": { requests: 3, tokens: 150, cost: 0 } };
+    const ctx = await engine.getKeyLimitsContext(req("sk-b"));
+    expect((await engine.enforceKeyLimits(ctx))?.status).toBe(402);
   });
 });
 
