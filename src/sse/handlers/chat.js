@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { resolvePromptInstructions } from "@/lib/promptInstructions";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -485,8 +486,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request) || hasSkillPrompt(request),
-      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", memoryPrompts.get(request), getSkillPrompt(request)].filter(Boolean).join("\n\n"),
+      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request) || hasSkillPrompt(request) || (chatSettings.promptInstructionsEnabled && !!resolvePromptInstructions(chatSettings.promptInstructions, provider, model)),
+      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", chatSettings.promptInstructionsEnabled ? resolvePromptInstructions(chatSettings.promptInstructions, provider, model) : "", memoryPrompts.get(request), getSkillPrompt(request)].filter(Boolean).join("\n\n"),
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,

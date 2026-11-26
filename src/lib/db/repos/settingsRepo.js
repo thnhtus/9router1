@@ -64,6 +64,11 @@ const DEFAULT_SETTINGS = {
   // User-authored system prompt, injected independently of the built-in savers.
   customPromptEnabled: false,
   customPrompt: "",
+  // Named prompt-instruction library (managed on /dashboard/prompt-instructions).
+  // Each entry: { id, name, text, scope: "global"|"provider"|"model", target,
+  //   priority:number, enabled:boolean, createdAt, updatedAt }.
+  promptInstructions: [],
+  promptInstructionsEnabled: false,
   pxpipeEnabled: false,
   memoryEnabled: false,
   memoryEmbeddingModel: "",

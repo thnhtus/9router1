@@ -48,6 +48,7 @@ const navItems = [
   // { href: "/dashboard/agents", label: "Agents", icon: "smart_toy" }, // Hidden
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
+  { href: "/dashboard/prompt-instructions", label: "Prompt Instructions", icon: "edit_note" },
   { href: "/dashboard/jev-router", label: "Jev Router", icon: "psychology" },
   { href: "/dashboard/model-stats", label: "Model Stats", icon: "leaderboard" },
   { href: "/dashboard/knowledge-graph", label: "Knowledge Graph", icon: "hub" },

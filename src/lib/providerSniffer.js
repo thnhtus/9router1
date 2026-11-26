@@ -8,10 +8,33 @@ import { launchChromiumWithFallback, resolveSystemChromeExecutable } from "open-
 
 // Repo registry source tree (resolved from cwd). The sniffer writes real
 // provider files here so installed candidates become first-class registry entries.
-const REGISTRY_DIR = path.join(process.cwd(), "open-sse", "providers", "registry");
-const REGISTRY_INDEX = path.join(REGISTRY_DIR, "index.js");
-const ICONS_DIR = path.join(process.cwd(), "public", "providers");
+const MAX_CANDIDATE_DEPTH = 10;
 
+/**
+ * Find the checkout root that owns open-sse/providers/registry/index.js.
+ * Dev runs with cwd at the checkout; standalone runs one or more levels below
+ * it (.next/standalone), so walk upwards until the registry source is found.
+ */
+export function resolveRegistryRoot(startCwd = process.cwd()) {
+  if (fs.existsSync(path.join(startCwd, "open-sse", "providers", "registry", "index.js"))) return startCwd;
+  let dir = startCwd;
+  for (let i = 0; i < MAX_CANDIDATE_DEPTH; i++) {
+    dir = path.join(dir, "..");
+    if (fs.existsSync(path.join(dir, "open-sse", "providers", "registry", "index.js"))) return dir;
+  }
+  return startCwd;
+}
+
+// Resolved per call (cheaply cached per cwd) so a long-lived server still works
+// if it is started from a standalone tree rather than the checkout root.
+let rootCache = { cwd: null, root: null };
+function registryPaths() {
+  const cwd = process.cwd();
+  if (rootCache.cwd !== cwd) rootCache = { cwd, root: resolveRegistryRoot(cwd) };
+  const root = rootCache.root;
+  const dir = path.join(root, "open-sse", "providers", "registry");
+  return { root, dir, index: path.join(dir, "index.js"), icons: path.join(root, "public", "providers") };
+}
 /** Normalize a candidate id to a safe kebab-case filename slug. */
 export function sanitizeRegistryId(id) {
   const slug = String(id || "")
@@ -30,16 +53,17 @@ export function sanitizeRegistryId(id) {
 export async function installToRegistry(candidate) {
   const id = sanitizeRegistryId(candidate?.id);
   if (!id) throw new Error("Invalid provider id");
+  const { dir, index } = registryPaths();
   // Global CLI installs run from an arbitrary cwd with only a built bundle — no source to write into.
-  if (!fs.existsSync(REGISTRY_INDEX)) throw new Error(`Registry source not found at ${REGISTRY_DIR}; install only works when 9router runs from a repo checkout`);
-  const file = path.join(REGISTRY_DIR, `${id}.js`);
+  if (!fs.existsSync(index)) throw new Error(`Registry source not found at ${dir}; install only works when 9router runs from a repo checkout`);
+  const file = path.join(dir, `${id}.js`);
   if (fs.existsSync(file)) throw new Error(`Provider ${id} already installed (${id}.js exists)`);
 
   const code = generateRegistryDraft({ ...candidate, id });
   fs.writeFileSync(file, code);
 
-  const idx = addToRegistryIndex(fs.readFileSync(REGISTRY_INDEX, "utf8"), id);
-  fs.writeFileSync(REGISTRY_INDEX, idx);
+  const idx = addToRegistryIndex(fs.readFileSync(index, "utf8"), id);
+  fs.writeFileSync(index, idx);
   await fetchProviderLogo({ ...candidate, id }).catch(() => {});
   return { id, filename: `${id}.js` };
 }
@@ -66,7 +90,7 @@ export function addToRegistryIndex(src, id) {
 /** Provider icon files live at public/providers/{id}.png (128px). */
 export function hasProviderLogo(id) {
   const slug = sanitizeRegistryId(id);
-  return !!slug && fs.existsSync(path.join(ICONS_DIR, `${slug}.png`));
+  return !!slug && fs.existsSync(path.join(registryPaths().icons, `${slug}.png`));
 }
 
 /**
@@ -93,8 +117,8 @@ export async function fetchProviderLogo(candidate) {
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 200) return { ok: false, id, error: "logo response too small" };
 
-  fs.mkdirSync(ICONS_DIR, { recursive: true });
-  fs.writeFileSync(path.join(ICONS_DIR, `${id}.png`), buf);
+  fs.mkdirSync(registryPaths().icons, { recursive: true });
+  fs.writeFileSync(path.join(registryPaths().icons, `${id}.png`), buf);
   return { ok: true, id, domain, bytes: buf.length };
 }
 

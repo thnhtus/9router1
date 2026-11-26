@@ -172,6 +172,11 @@ import p175 from "./aihubmix.js";
 import p176 from "./z-ai.js";
 import p177 from "./anyapi.js";
 import p178 from "./vertex-ai-express.js";
+import p179 from "./inferbase.js";
+import p180 from "./vlm-run.js";
+import p181 from "./cheapllm.js";
+import p182 from "./synap.js";
+import p183 from "./merkium.js";
 export default [
   p0,
   p1,
@@ -344,4 +349,9 @@ export default [
   p176,
   p177,
   p178,
+  p179,
+  p180,
+  p181,
+  p182,
+  p183,
 ];

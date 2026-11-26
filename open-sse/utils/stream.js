@@ -19,6 +19,37 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
 
+// Degeneration guard: catches model repetition loops (e.g. '"}"..."}' spam) that
+// burn tokens and flood clients. Tracks the tail of emitted text and trips when
+// the same short gram repeats consecutively beyond threshold. Tuned high enough
+// to avoid false positives on legitimate repeated chars in code/minified output.
+const DEGEN_GRAM = 3;
+const DEGEN_REPEAT_THRESHOLD = 60; // 60 * 3 chars = 180 chars of same gram
+const DEGEN_TAIL_CHARS = 512;
+
+function createDegenerationDetector() {
+  let tail = "";
+  return {
+    feed(text) {
+      if (!text) return false;
+      tail = (tail + text).slice(-DEGEN_TAIL_CHARS);
+      if (tail.length < DEGEN_GRAM * DEGEN_REPEAT_THRESHOLD) return false;
+      const gram = tail.slice(-DEGEN_GRAM);
+      // Ignore whitespace-only grams to avoid false positives on indentation.
+      if (!gram.trim()) return false;
+      let count = 0;
+      for (let i = tail.length - DEGEN_GRAM; i >= 0; i -= DEGEN_GRAM) {
+        if (tail.slice(i, i + DEGEN_GRAM) === gram) count++;
+        else break;
+      }
+      return count >= DEGEN_REPEAT_THRESHOLD;
+    },
+    sample() {
+      return tail.slice(-60);
+    }
+  };
+}
+
 /**
  * Stream modes
  */
@@ -65,6 +96,8 @@ export function createSSEStream(options = {}) {
 
   let buffer = "";
   let usage = null;
+  const degen = createDegenerationDetector();
+  let degenerationTripped = false;
 
   // Tool-call ids already sent to the client, keyed by the tool-call index.
   // A late fragment that opens a NEW index without an id must not reach the
@@ -159,6 +192,25 @@ export function createSSEStream(options = {}) {
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
+
+      // Circuit-breaker: a runaway repetition loop burns tokens and floods the
+      // client. Emit a compact error and end the stream instead of forwarding.
+      if (!degenerationTripped && degen.feed(text)) {
+        degenerationTripped = true;
+        const sample = degen.sample();
+        const msg = `degenerate_repetition: model output entered a repetition loop (tail: ${JSON.stringify(sample)})`;
+        console.error(`[DEGEN] ${provider || targetFormat}/${model || "?"} — ${msg}`);
+        finalizeStream();
+        try {
+          const errPayload = { error: { message: msg, type: "upstream_error", code: "degenerate_repetition" } };
+          controller.enqueue(sharedEncoder.encode(`data: ${JSON.stringify(errPayload)}\n\n`));
+          if (provider !== "antigravity" && provider !== "gemini" && provider !== "vertex") {
+            controller.enqueue(sharedEncoder.encode(SSE_DONE));
+          }
+        } catch { /* controller closed */ }
+        controller.end?.();
+        return;
+      }
 
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";

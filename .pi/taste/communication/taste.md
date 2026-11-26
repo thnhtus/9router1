@@ -1,4 +1,8 @@
+
+- Prefers responses in the user's language (e.g., Vietnamese) when the user communicates in that language. Confidence: 0.9
 # Communication
+- Replies in the user's language (Vietnamese) when the user writes in Vietnamese. Confidence: 0.9
+- Provides a clear statement of whether a feature (e.g., prompt instructions) is currently enabled, including relevant DB flags or config values, when asked about its activation status. Confidence: 0.8
 - Writes to the agent in Vietnamese; reply in Vietnamese. Fresh evidence: explicitly asked for the recap "in vietnamese" (2026-11-18) even though the prior debugging was done with English option prompts. Confidence: 0.85
 - Asks for a "recap" of prior work when returning to a task (e.g. "recap in vietnamese"), expecting a Vietnamese summary of the request, what was checked with real numbers/paths (versions, timestamps), what was corrected from earlier hypotheses, and lettered choices for what to do next. Recurred again 2026-11-18 for the pi-subagents version-mismatch task. Confidence: 0.6
 - For investigation and audit tasks, wants a thorough search but a concise single combined report with file:line references. Real testing over speculation; when unsure, test the hypothesis and report findings (HTTP status, latencies, concrete metrics) + root cause + one-liner judgment. Fresh evidence: asked for a gap audit of the agent-beacon core-concepts implementation ("phần implement core concepts ... đã làm được những gì rồi") and got a table of what's done vs. missing with file:line refs plus risks — matches the pattern. Confidence: 0.7
