@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
-import { resolvePromptInstructions } from "@/lib/promptInstructions";
+import { selectPromptInstructions } from "@/lib/promptInstructions";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -467,6 +467,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const promptInstructionEntries = chatSettings.promptInstructionsEnabled
+      ? selectPromptInstructions(chatSettings.promptInstructions, provider, model)
+      : [];
+    const promptInstructionsText = promptInstructionEntries
+      .map((e) => e.text.trim())
+      .join("\n\n");
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -486,8 +492,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request) || hasSkillPrompt(request) || (chatSettings.promptInstructionsEnabled && !!resolvePromptInstructions(chatSettings.promptInstructions, provider, model)),
-      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", chatSettings.promptInstructionsEnabled ? resolvePromptInstructions(chatSettings.promptInstructions, provider, model) : "", memoryPrompts.get(request), getSkillPrompt(request)].filter(Boolean).join("\n\n"),
+      customPromptEnabled: !!chatSettings.customPromptEnabled || memoryPrompts.has(request) || hasSkillPrompt(request) || promptInstructionsText.length > 0,
+      customPrompt: [chatSettings.customPromptEnabled ? chatSettings.customPrompt : "", promptInstructionsText, memoryPrompts.get(request), getSkillPrompt(request)].filter(Boolean).join("\n\n"),
+      promptInstructionIds: promptInstructionEntries.map((e) => e.id).filter(Boolean),
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,

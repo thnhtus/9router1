@@ -5,6 +5,15 @@
 //   model    → applies when "provider/model" (or bare model) matches
 // Enabled entries are ordered by priority ascending, then by name for stability.
 
+// Returns the matched, sorted entries (so callers can count/attribute per entry).
+export function selectPromptInstructions(list, provider, model) {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  return list
+    .filter((entry) => entry && typeof entry.text === "string" && entry.text.trim())
+    .filter((entry) => matches(entry, provider, model))
+    .sort((a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 0) || byName(a, b));
+}
+
 const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
 
 function matches(entry, provider, model) {
@@ -22,11 +31,7 @@ function matches(entry, provider, model) {
 }
 
 export function resolvePromptInstructions(list, provider, model) {
-  if (!Array.isArray(list) || list.length === 0) return "";
-  return list
-    .filter((entry) => entry && typeof entry.text === "string" && entry.text.trim())
-    .filter((entry) => matches(entry, provider, model))
-    .sort((a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 0) || byName(a, b))
+  return selectPromptInstructions(list, provider, model)
     .map((entry) => entry.text.trim())
     .join("\n\n");
 }

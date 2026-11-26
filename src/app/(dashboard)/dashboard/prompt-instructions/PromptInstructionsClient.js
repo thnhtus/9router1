@@ -49,6 +49,7 @@ export default function PromptInstructionsClient() {
   const [jevPrompts, setJevPrompts] = useState(null);
   const [sourceDetail, setSourceDetail] = useState(null);
   const [sampleFormat, setSampleFormat] = useState("openai");
+  const [usage, setUsage] = useState({ hours: 168, counts: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -97,6 +98,12 @@ export default function PromptInstructionsClient() {
         if (jr.ok) setJevPrompts(await jr.json());
       } catch {
         // optional source
+      }
+      try {
+        const ur = await fetch("/api/prompt-instructions/stats?hours=168", { headers: { "Cache-Control": "no-store" } });
+        if (ur.ok) setUsage(await ur.json());
+      } catch {
+        // optional stats
       }
       if (migrated) {
         try {
@@ -297,12 +304,13 @@ export default function PromptInstructionsClient() {
         </div>
         {error && <div className="px-5 py-2 text-xs text-destructive">{error}</div>}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[48rem] table-fixed text-sm">
+          <table className="w-full min-w-[56rem] table-fixed text-sm">
             <colgroup>
               <col className="w-[14rem]" />
               <col className="w-[12rem]" />
               <col className="w-[7rem]" />
               <col className="w-[8rem]" />
+              <col className="w-[9rem]" />
               <col />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-card">
@@ -311,27 +319,31 @@ export default function PromptInstructionsClient() {
                 <th scope="col" className="px-5 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground">Scope</th>
                 <th scope="col" className="px-5 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground">Priority</th>
                 <th scope="col" className="px-5 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground">Updated</th>
+                <th scope="col" className="px-5 py-2.5 text-right text-xs font-medium whitespace-nowrap text-muted-foreground" title="Requests that injected this instruction in the last 7 days">Requests (7d)</th>
                 <th scope="col" className="px-5 py-2.5 text-right text-xs font-medium whitespace-nowrap text-muted-foreground">Enabled</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={5} className="px-5 py-6 text-center text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={6} className="px-5 py-6 text-center text-muted-foreground">Loading…</td></tr>
               )}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={5} className="px-5 py-6 text-center text-muted-foreground">No prompt instructions yet.</td></tr>
+                <tr><td colSpan={6} className="px-5 py-6 text-center text-muted-foreground">No prompt instructions yet.</td></tr>
               )}
-              {filtered.map((item) => (
+              {filtered.map((item) => {
+                const hits = (usage.counts || {})[item.id] || 0;
+                return (
                 <tr key={item.id} className="border-b last:border-0 hover:bg-secondary/40 cursor-pointer" onClick={() => openEdit(item)}>
                   <td className="px-5 py-3 font-medium truncate">{item.name}</td>
                   <td className="px-5 py-3 text-muted-foreground truncate">{scopeLabel(item)}</td>
                   <td className="px-5 py-3 tabular-nums">{item.priority != null ? item.priority : 0}</td>
                   <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{timeAgo(item.updatedAt)}</td>
+                  <td className="px-5 py-3 text-right tabular-nums text-muted-foreground" title={`${hits} requests (7d)`}>{hits > 0 ? hits.toLocaleString() : "—"}</td>
                   <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <Toggle checked={!!item.enabled} onChange={(v) => toggleItem(item.id, v)} aria-label={"Toggle " + item.name} />
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>

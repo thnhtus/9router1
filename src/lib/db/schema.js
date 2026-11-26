@@ -227,6 +227,16 @@ export const TABLES = {
     },
     primaryKey: "PRIMARY KEY (hour, level)",
   },
+  // Hourly per-instruction attribution for user-authored prompt instructions,
+  // kept forever (small rows). One row per (hour, instructionId) with request count.
+  promptInstructionHourly: {
+    columns: {
+      hour: "TEXT NOT NULL", // ISO, truncated to the hour (UTC)
+      instructionId: "TEXT NOT NULL",
+      total: "INTEGER NOT NULL DEFAULT 0", // requests that injected this instruction
+    },
+    primaryKey: "PRIMARY KEY (hour, instructionId)",
+  },
   // Hourly MCP tool-call counters, counted from tool_use/tool_calls in model responses
   // (9router proxy sees model output, not Pi-side execution). Kept forever (small rows).
   // tool = '' on the rollup row that carries per-server call totals.
