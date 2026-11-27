@@ -48,7 +48,9 @@ export function getSyncState() {
 
 // "zai-org/GLM-4.6V:free" -> "glm-4.6v"
 function baseId(modelId) {
-  const withoutVendor = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+  if (modelId == null) return "";
+  const str = String(modelId);
+  const withoutVendor = str.includes("/") ? str.split("/").pop() : str;
   return withoutVendor.toLowerCase().split(":")[0];
 }
 
@@ -133,7 +135,11 @@ export function build(catalog, entries) {
   // Limits belong to the gateway — each truncates differently — so only the
   // matching provider's own numbers are used, keyed by provider + model.
   const providers = {};
-  for (const { provider, model, contextLength, current } of entries) {
+  for (const { provider, model, contextLength, current: currentCaps } of entries) {
+    // Registry entries are only useful with both halves present; a model with a
+    // null id used to reach baseId() and throw on `null.includes`.
+    if (!provider || model == null || model === "") continue;
+    const current = currentCaps || {};
     const alias = PROVIDER_ALIASES[provider];
     const upstream = catalog[provider] ? provider : (alias && catalog[alias] ? alias : null);
     const entry = upstream && byProvider[upstream]?.[baseId(model)];
@@ -171,6 +177,7 @@ async function collectEntries() {
   const entries = [];
   for (const provider of registry) {
     for (const model of provider.models || []) {
+      if (!model?.id) continue;
       entries.push({
         provider: provider.id,
         model: model.id,

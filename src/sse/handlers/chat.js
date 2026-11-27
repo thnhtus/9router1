@@ -501,6 +501,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
+      contextBudgetEnabled: !!chatSettings.contextBudgetEnabled,
+      contextBudgetTokens: chatSettings.contextBudgetTokens,
+      contextBudgetKeepToolResults: chatSettings.contextBudgetKeepToolResults,
+      contextBudgetFoldCap: chatSettings.contextBudgetFoldCap,
       providerThinking,
       // Per-provider user overrides (custom headers / connect timeout) from settings
       providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,

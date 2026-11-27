@@ -13,6 +13,21 @@ const STABLE_POLLS_FORCE = 20;
 const FIRST_TOKEN_TIMEOUT_MS = 30000;
 const REPLY_TIMEOUT_MS = 60000;
 
+// Gemini's app can render a request failure instead of an assistant bubble.
+export class GeminiAppError extends Error {
+  constructor(detail) {
+    super(`Gemini app error: ${detail}`);
+    this.name = "GeminiAppError";
+  }
+}
+
+export function isGeminiAppError(text) {
+  return (
+    typeof text === "string" &&
+    /sorry,?\s*something went wrong|something went wrong|try your request again|try again later|unusual traffic|verify you are human|encountering an error|try something else for you/i.test(text)
+  );
+}
+
 const ASSISTANT_SELECTOR = "model-response, message-content";
 
 const READ_REPLY_STATE = `(() => {
@@ -38,11 +53,11 @@ const READ_REPLY_STATE = `(() => {
     host.remove();
   }
   generating = !!document.querySelector('[data-test-id="thinking-overlay-content"], button[aria-label*="Stop" i]');
-  return {
-    count: msgs.length,
-    lastText: last,
-    generating,
-  };
+  const bodyTail = (document.body?.innerText || "").slice(-2000);
+  const appErrorPattern = /sorry,?\\s*something went wrong|something went wrong|try your request again|try again later|unusual traffic|verify you are human|encountering an error|try something else for you/gi;
+  const appError = (bodyTail.match(appErrorPattern)?.[0] || "");
+  const appErrorCount = (bodyTail.match(appErrorPattern) || []).length;
+  return { count: msgs.length, lastText: last, generating, appError, appErrorCount };
 })()`;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -123,11 +138,16 @@ export async function waitForGeminiReply({
     if (signal?.aborted) throw new Error("Request aborted");
     const elapsed = Date.now() - started;
     if (elapsed > timeoutMs) throw new Error("Gemini reply timed out");
-    if (!gotFirst && elapsed > firstTokenMs) throw new Error("no first token from Gemini");
+    if (!gotFirst && elapsed > firstTokenMs) {
+      const st2 = await readReplyState(page);
+      if (st2.appError) throw new GeminiAppError(st2.appError);
+      throw new Error("no first token from Gemini");
+    }
     await sleep(POLL_INTERVAL_MS);
 
     const st = await readReplyState(page);
     const text = st.lastText || "";
+    if (st.appError && !gotFirst) throw new GeminiAppError(st.appError);
     const isNew = st.count > baseCount || (text && text !== baseText);
     if (!isNew || !text) continue;
 
@@ -143,7 +163,7 @@ export async function waitForGeminiReply({
       const delta = text.startsWith(emitted) ? text.slice(emitted.length) : text;
       if (delta) {
         emitted = text;
-        onDelta?.(delta);
+        onDelta?.(delta, text);
       }
     }
     if (stable >= STABLE_POLLS_FORCE) return emitted || text;

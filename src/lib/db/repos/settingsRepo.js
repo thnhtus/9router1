@@ -61,6 +61,11 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  // Context budget: fold old tool results when a prompt exceeds the token ceiling.
+  contextBudgetEnabled: true,
+  contextBudgetTokens: 60000,
+  contextBudgetKeepToolResults: 8,
+  contextBudgetFoldCap: 1500,
   // User-authored system prompt, injected independently of the built-in savers.
   customPromptEnabled: false,
   customPrompt: "",

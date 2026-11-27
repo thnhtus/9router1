@@ -26,7 +26,7 @@ import {
   selectGeminiExtendedThinking,
   selectGeminiModel,
 } from "./gemini-web/modeSelection.js";
-import { readReplyState, waitForGeminiReply } from "./gemini-web/domCapture.js";
+import { readReplyState, waitForGeminiReply, GeminiAppError, isGeminiAppError } from "./gemini-web/domCapture.js";
 import { parseToolCallsFromText, prepareToolMessages } from "../translator/webTools.js";
 import { buildToolModeResponse } from "./chatgptWebTools.js";
 import { buildImagePrompt, waitForGeminiImage } from "./gemini-web/imageGen.js";
@@ -71,7 +71,7 @@ export function isGeminiRefusal(text) {
   return (
     typeof text === "string" &&
     text.length < 300 &&
-    /I'?m having a hard time fulfilling your request|I encountered an error doing what you asked/i.test(text)
+    /I'?m having a hard time fulfilling your request|I encountered an error doing what you asked|I seem to be encountering an error|Can I try something else for you/i.test(text)
   );
 }
 
@@ -94,7 +94,16 @@ const MALFORMED_TOOL_RETRY =
   "or answer in plain text with no tool block.";
 
 async function settleGeminiReply(page, prompt, responseText, toolDefs, signal) {
-  if (isGeminiRefusal(responseText)) return retryGeminiReply(page, prompt, signal);
+  const retryable = isGeminiRefusal(responseText) || isGeminiAppError(responseText);
+  if (retryable) {
+    const retried = await retryGeminiReply(page, prompt, signal);
+    // Persistent upstream fault: stop retrying, surface the refusal/error so
+    // the caller maps it to a retryable upstream status (account fallback).
+    if (isGeminiRefusal(retried) || isGeminiAppError(retried)) {
+      throw new GeminiAppError(retried || "Gemini replied with a refusal or an error");
+    }
+    return retried;
+  }
   if (!toolDefs?.length) return responseText;
   const parsed = parseToolCallsFromText(responseText, "gweb", toolDefs);
   if (!parsed.invalidToolCall && !parsed.incomplete) return responseText;
@@ -226,7 +235,7 @@ function withClientToolPriority(prepared) {
 }
 
 const GEMINI_APP_ERROR_TEXT =
-  /something went wrong|try again later|unusual traffic|verify you are human/i;
+  /something went wrong|try again later|unusual traffic|verify you are human|encountering an error|try something else for you/i;
 const GEMINI_QUOTA_TEXT =
   /used all of your requests|quota will reset|quota exceeded|reached your limit/i;
 
@@ -704,6 +713,18 @@ export class GeminiWebExecutor extends BaseExecutor {
           transformedBody: body,
         };
       }
+      // Gemini's app rendered an inline error card instead of an answer (and a
+      // same-page resend did not clear it). That is an upstream fault on this
+      // account, not a bad request: map to 502 so account fallback retries the
+      // next account instead of failing the request or locking the model.
+      if (error instanceof GeminiAppError || isGeminiAppError(rawMessage)) {
+        return {
+          response: errorResponse(502, rawMessage),
+          url: GEMINI_URL,
+          headers: {},
+          transformedBody: body,
+        };
+      }
       // Playwright selector/click timeout errors are terminal — they indicate
       // the page DOM does not match expectations (e.g. Gemini changed their UI
       // or the session is so expired it lands on a different page). Return 400
@@ -768,6 +789,7 @@ export class GeminiWebExecutor extends BaseExecutor {
 
     const results = [];
     for (let i = 0; i < Math.max(1, n); i++) {
+      log?.info?.("GEMINI-WEB", `generateMedia attempt ${i + 1}/${n}`);
       let browser = null;
       let context = null;
       try {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { cleanReplyText } from "../../open-sse/executors/gemini-web/domCapture.js";
+import { cleanReplyText, isGeminiAppError } from "../../open-sse/executors/gemini-web/domCapture.js";
+import { isGeminiRefusal } from "../../open-sse/executors/gemini-web.js";
 
 describe("cleanReplyText", () => {
   it("drops trailing 'Explore related' suggestion chips", () => {
@@ -105,5 +106,30 @@ describe("cleanReplyText", () => {
   it("handles empty input", () => {
     expect(cleanReplyText("")).toBe("");
     expect(cleanReplyText(null)).toBe("");
+  });
+});
+
+describe("isGeminiAppError", () => {
+  it("detects the inline Gemini error card text", () => {
+    expect(isGeminiAppError("Sorry, something went wrong. Please try your request again.")).toBe(true);
+    expect(isGeminiAppError("I seem to be encountering an error. Can I try something else for you?")).toBe(true);
+    expect(isGeminiAppError("Something went wrong, sorry about that")).toBe(true);
+  });
+
+  it("does not flag normal answers", () => {
+    expect(isGeminiAppError("42")).toBe(false);
+    expect(isGeminiAppError("The answer is 42 because reasons")).toBe(false);
+    expect(isGeminiAppError(null)).toBe(false);
+  });
+});
+
+describe("isGeminiRefusal", () => {
+  it("flags canned refusals including the new Gemini error phrasing", () => {
+    expect(isGeminiRefusal("I'm having a hard time fulfilling your request.")).toBe(true);
+    expect(isGeminiRefusal("I seem to be encountering an error. Can I try something else for you?")).toBe(true);
+  });
+
+  it("does not flag real answers", () => {
+    expect(isGeminiRefusal("The answer is 42.")).toBe(false);
   });
 });

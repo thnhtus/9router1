@@ -89,6 +89,7 @@ export const ERROR_RULES = [
   { text: "credit balance is too low", backoff: true, kind: ERROR_KIND.QUOTA },
   { text: "capacity",                 backoff: true, kind: ERROR_KIND.QUOTA },
   { text: "overloaded",               backoff: true, kind: ERROR_KIND.QUOTA },
+  { text: "had not started to answer", backoff: true, kind: ERROR_KIND.QUOTA },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long, kind: ERROR_KIND.CREDENTIAL },

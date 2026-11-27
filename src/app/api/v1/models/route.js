@@ -508,6 +508,10 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       const modelIds = rawModelIds
         .map((modelId) => {
+          // Enabled-model lists, static tables and live catalogs can all carry a
+          // null id; the trailing filter drops it, but only if the map does not
+          // throw on `null.startsWith` first.
+          if (typeof modelId !== "string") return null;
           if (modelId.startsWith(`${outputAlias}/`)) {
             return modelId.slice(outputAlias.length + 1);
           }

@@ -60,6 +60,26 @@ describe("model catalog", () => {
     expect(models["kimi:kimi-k3"]).toBeUndefined();
   });
 
+  it("tolerates registry models with null/empty ids instead of throwing", () => {
+    const nullEntries = [
+      // a provider upstream knows about is what actually reaches baseId(null)
+      { provider: "zai", model: null, current: { contextWindow: 128000, maxOutput: 32000 } },
+      { provider: "moonshotai", model: null, current: null },
+      // unknown providers short-circuit before baseId, so they only guard the loop
+      { provider: "synap", model: null, current: { contextWindow: 128000, maxOutput: 32000 } },
+      { provider: "merkium", model: "", current: { contextWindow: 128000, maxOutput: 32000 } },
+      { provider: "kilo", model: "kilo-auto/efficient", current: null },
+    ];
+    expect(() => build(upstream, nullEntries)).not.toThrow();
+    const { models } = build(upstream, nullEntries);
+    // dropped entries leave no keys under their provider
+    expect(models["zai:null"]).toBeUndefined();
+    expect(models["moonshotai:null"]).toBeUndefined();
+    expect(models["synap:null"]).toBeUndefined();
+    expect(models["merkium:"]).toBeUndefined();
+    expect(models["kilo:efficient"]).toEqual({ vision: true });
+  });
+
   it("files an upstream provider under every local id that aliases it", () => {
     const { models } = build(upstream, entries);
     // glm-cn and zhipu are both zhipuai upstream; neither may be dropped

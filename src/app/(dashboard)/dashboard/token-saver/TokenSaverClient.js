@@ -45,6 +45,10 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [contextBudgetEnabled, setContextBudgetEnabled] = useState(true);
+  const [contextBudgetTokens, setContextBudgetTokens] = useState(60000);
+  const [contextBudgetKeepToolResults, setContextBudgetKeepToolResults] = useState(8);
+  const [contextBudgetFoldCap, setContextBudgetFoldCap] = useState(1500);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -106,6 +110,18 @@ export default function TokenSaverClient() {
   const handleCavemanEnabled = (value) => {
     setCavemanEnabled(value);
     patchSetting({ cavemanEnabled: value });
+  };
+
+  const handleContextBudgetEnabled = (value) => {
+    setContextBudgetEnabled(value);
+    patchSetting({ contextBudgetEnabled: value });
+  };
+  const handleContextBudgetBlur = () => {
+    patchSetting({
+      contextBudgetTokens,
+      contextBudgetKeepToolResults,
+      contextBudgetFoldCap,
+    });
   };
 
   const handleHeadroomEnabled = (value) => {
@@ -428,6 +444,10 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setContextBudgetEnabled(data.contextBudgetEnabled !== false);
+          setContextBudgetTokens(data.contextBudgetTokens ?? 60000);
+          setContextBudgetKeepToolResults(data.contextBudgetKeepToolResults ?? 8);
+          setContextBudgetFoldCap(data.contextBudgetFoldCap ?? 1500);
               setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -737,6 +757,56 @@ export default function TokenSaverClient() {
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Context budget</p>
+            <p className="text-sm text-muted-foreground">
+              Fold old tool results when the prompt exceeds the token ceiling (keeps the latest tool results intact).
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
+            <Toggle
+              checked={contextBudgetEnabled}
+              onChange={() => handleContextBudgetEnabled(!contextBudgetEnabled)}
+            />
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              ceiling
+              <Input
+                type="number"
+                value={contextBudgetTokens}
+                onChange={(e) => setContextBudgetTokens(Math.max(1000, Number(e.target.value)))}
+                onBlur={handleContextBudgetBlur}
+                min="1000"
+                className="w-24"
+              />
+              tok
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              cap
+              <Input
+                type="number"
+                value={contextBudgetFoldCap}
+                onChange={(e) => setContextBudgetFoldCap(Math.max(100, Number(e.target.value)))}
+                onBlur={handleContextBudgetBlur}
+                min="100"
+                className="w-24"
+              />
+              chars
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              keep
+              <Input
+                type="number"
+                value={contextBudgetKeepToolResults}
+                onChange={(e) => setContextBudgetKeepToolResults(Math.max(1, Number(e.target.value)))}
+                onBlur={handleContextBudgetBlur}
+                min="1"
+                className="w-20"
+              />
+              results
+            </label>
           </div>
         </div>
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">

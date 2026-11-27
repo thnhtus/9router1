@@ -45,6 +45,13 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     });
   });
 
+  it("falls back with backoff for queue-timeout-no-priority errors", () => {
+    const msg = "This request waited 10 min and the model had not started to answer; a request without priority credit is stopped after 10 min. Its prompt is about 92,289 tokens: a shorter one is read sooner. Send it again when the line is shorter.";
+    expect(checkFallbackError(503, msg)).toEqual({
+      shouldFallback: true, cooldownMs: 2000, newBackoffLevel: 1, kind: ERROR_KIND.QUOTA,
+    });
+  });
+
   it("does not fall back for an ordinary bad request", () => {
     expect(checkFallbackError(400, "Bad request")).toEqual({
       shouldFallback: false, cooldownMs: 0, requestScoped: true, kind: ERROR_KIND.REQUEST,

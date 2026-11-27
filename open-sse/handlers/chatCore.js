@@ -31,6 +31,7 @@ import { injectCustomPrompt } from "../rtk/customPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
+import { applyContextBudget } from "../services/contextBudget.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -65,7 +66,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, promptInstructionIds, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, promptInstructionIds, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, contextBudgetEnabled, contextBudgetTokens, contextBudgetKeepToolResults, contextBudgetFoldCap, sourceFormatOverride, providerThinking, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -346,7 +347,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
   }
 
+  // Context budget: fold old tool results when the prompt exceeds the token ceiling.
+  // Keeps tool_call/tool_result pairing and recent turns intact; never splits requests.
+  let contextBudgetResult = null;
+  if (contextBudgetEnabled !== false) {
+    contextBudgetResult = applyContextBudget(translatedBody, {
+      budgetTokens: contextBudgetTokens,
+      keepToolResults: contextBudgetKeepToolResults,
+      foldCapChars: contextBudgetFoldCap,
+    });
+    if (contextBudgetResult.applied) {
+      xf.push(`CONTEXTBUDGET:${contextBudgetResult.folded}`);
+      if (log?.line) log.line(reqTag, "⚙", `context ${Math.round(contextBudgetResult.before/1000)}k→${Math.round(contextBudgetResult.after/1000)}k tokens (folded ${contextBudgetResult.folded})`);
+    }
+  }
+
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
+  // Re-evaluate xf-based tokenSavers below includes context budget flag already in xf.
   let tokenSavers = null;
   if (xf.length || headroomStats) {
     const headroomSummary = headroomStats
